@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 
 const navLinks = [
@@ -10,11 +12,25 @@ const navLinks = [
   { name: 'Loans & Credit', href: '#loans' },
   { name: 'Investments', href: '#investments' },
   { name: 'Contact & Support', href: '#contact' },
-  { name: 'Dashboard', href: '#dashboard' },
 ];
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+
+  const handleAuthClick = () => {
+    if (user) {
+      navigate('/dashboard');
+    } else {
+      navigate('/auth');
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -35,12 +51,43 @@ export const Navbar = () => {
                 {link.name}
               </a>
             ))}
+            {user && (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Dashboard
+              </button>
+            )}
           </div>
 
-          <div className="hidden lg:block">
-            <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground">
-              Login
-            </Button>
+          <div className="hidden lg:flex items-center gap-3">
+            {user ? (
+              <>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => navigate('/dashboard')}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  My Account
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handleSignOut}
+                  className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                >
+                  Sign Out
+                </Button>
+              </>
+            ) : (
+              <Button 
+                variant="outline" 
+                onClick={handleAuthClick}
+                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+              >
+                Login
+              </Button>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -66,9 +113,52 @@ export const Navbar = () => {
                   {link.name}
                 </a>
               ))}
-              <Button variant="outline" className="w-fit border-primary text-primary hover:bg-primary hover:text-primary-foreground">
-                Login
-              </Button>
+              {user && (
+                <button
+                  onClick={() => {
+                    navigate('/dashboard');
+                    setIsOpen(false);
+                  }}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors text-left"
+                >
+                  Dashboard
+                </button>
+              )}
+              {user ? (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => {
+                      navigate('/dashboard');
+                      setIsOpen(false);
+                    }}
+                    className="w-fit"
+                  >
+                    My Account
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      handleSignOut();
+                      setIsOpen(false);
+                    }}
+                    className="w-fit border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                  >
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    handleAuthClick();
+                    setIsOpen(false);
+                  }}
+                  className="w-fit border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                >
+                  Login
+                </Button>
+              )}
             </div>
           </div>
         )}
