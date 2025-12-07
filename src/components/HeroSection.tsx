@@ -1,5 +1,7 @@
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Shield, TrendingUp, Globe, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 
 const features = [
@@ -26,6 +28,25 @@ const features = [
 ];
 
 export const HeroSection = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const handleOpenAccount = () => {
+    if (user) {
+      navigate('/dashboard');
+    } else {
+      navigate('/auth');
+    }
+  };
+
+  const handleViewAccount = () => {
+    if (user) {
+      navigate('/dashboard');
+    } else {
+      navigate('/auth');
+    }
+  };
+
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center pt-16 overflow-hidden">
       {/* Background with overlay */}
@@ -62,11 +83,20 @@ export const HeroSection = () => {
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-          <Button size="lg" className="bg-primary hover:bg-primary/90 text-primary-foreground px-8">
-            Open an Account
+          <Button 
+            size="lg" 
+            className="bg-primary hover:bg-primary/90 text-primary-foreground px-8"
+            onClick={handleOpenAccount}
+          >
+            {user ? 'Go to Dashboard' : 'Open an Account'}
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
-          <Button size="lg" variant="outline" className="border-foreground/30 text-foreground hover:bg-foreground/10">
+          <Button 
+            size="lg" 
+            variant="outline" 
+            className="border-foreground/30 text-foreground hover:bg-foreground/10"
+            onClick={handleViewAccount}
+          >
             VIEW ACCOUNT
           </Button>
         </div>
