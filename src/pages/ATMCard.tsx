@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import bitpayLogo from '@/assets/bitpay-logo.png';
-import { ArrowLeft, Eye, EyeOff, CreditCard, Shield, Wifi, Lock, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Shield, Wifi, Lock, CheckCircle } from 'lucide-react';
 
 interface CardData {
   card_number: string;
@@ -20,8 +20,7 @@ export default function ATMCard() {
   const navigate = useNavigate();
   const [card, setCard] = useState<CardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showCardNumber, setShowCardNumber] = useState(false);
-  const [showCVV, setShowCVV] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -49,10 +48,7 @@ export default function ATMCard() {
   }, [user]);
 
   const formatCardNumber = (num: string) => {
-    if (showCardNumber) {
-      return num.replace(/(.{4})/g, '$1 ').trim();
-    }
-    return '**** **** **** ' + num.slice(-4);
+    return num.replace(/(.{4})/g, '$1 ').trim();
   };
 
   if (loading || isLoading) {
@@ -81,69 +77,107 @@ export default function ATMCard() {
       <main className="container mx-auto px-4 py-8 max-w-lg">
         {card ? (
           <>
-            {/* Virtual Card Display */}
+            {/* Card Display with Flip Animation */}
             <div className="mb-8">
-              <div className="relative aspect-[1.586/1] w-full max-w-[400px] mx-auto">
-                <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 rounded-2xl p-6 flex flex-col justify-between shadow-2xl overflow-hidden">
-                  {/* Background Pattern */}
-                  <div className="absolute inset-0 opacity-10">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-primary rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
-                  </div>
+              <p className="text-center text-muted-foreground text-sm mb-4">Tap card to view CVV</p>
+              <div 
+                className="relative w-full max-w-[340px] mx-auto cursor-pointer"
+                style={{ perspective: '1000px' }}
+                onClick={() => setIsFlipped(!isFlipped)}
+              >
+                <div 
+                  className="relative w-full transition-transform duration-700"
+                  style={{ 
+                    transformStyle: 'preserve-3d',
+                    transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
+                  }}
+                >
+                  {/* Front of Card */}
+                  <div 
+                    className="w-full aspect-[1.586/1] rounded-2xl p-5 shadow-2xl"
+                    style={{ 
+                      backfaceVisibility: 'hidden',
+                      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'
+                    }}
+                  >
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 opacity-20 overflow-hidden rounded-2xl">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
+                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-primary rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
+                    </div>
 
-                  {/* Card Header */}
-                  <div className="relative z-10 flex items-start justify-between">
-                    <div>
-                      <p className="text-white/60 text-xs mb-1">Heritage Bank</p>
-                      <p className="text-white font-semibold">VISA Debit</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Wifi className="h-6 w-6 text-white/60 rotate-90" />
-                      <div className="w-10 h-8 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded" />
-                    </div>
-                  </div>
-
-                  {/* Card Number */}
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-4">
-                      <p className="text-white text-xl font-mono tracking-wider">
-                        {formatCardNumber(card.card_number)}
-                      </p>
-                      <button 
-                        onClick={() => setShowCardNumber(!showCardNumber)}
-                        className="text-white/60 hover:text-white"
-                      >
-                        {showCardNumber ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Card Footer */}
-                  <div className="relative z-10 flex items-end justify-between">
-                    <div>
-                      <p className="text-white/60 text-xs mb-1">Card Holder</p>
-                      <p className="text-white font-semibold uppercase">{card.card_holder_name}</p>
-                    </div>
-                    <div className="flex gap-6">
-                      <div>
-                        <p className="text-white/60 text-xs mb-1">Expires</p>
-                        <p className="text-white font-mono">{card.expiry_date}</p>
+                    <div className="relative z-10 h-full flex flex-col justify-between">
+                      {/* Card Header */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-white/60 text-xs font-medium tracking-wider">HERITAGE BANK</p>
+                        <div className="flex items-center gap-2">
+                          <Wifi className="h-5 w-5 text-white/60 rotate-90" />
+                          <div className="w-9 h-7 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-md" />
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-white/60 text-xs mb-1">CVV</p>
-                        <div className="flex items-center gap-1">
-                          <p className="text-white font-mono">{showCVV ? card.cvv : '***'}</p>
-                          <button 
-                            onClick={() => setShowCVV(!showCVV)}
-                            className="text-white/60 hover:text-white"
-                          >
-                            {showCVV ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                          </button>
+
+                      {/* Card Number */}
+                      <div className="my-4">
+                        <p className="text-white text-lg md:text-xl font-mono tracking-[0.2em]">
+                          {formatCardNumber(card.card_number)}
+                        </p>
+                      </div>
+
+                      {/* Card Footer */}
+                      <div className="flex items-end justify-between">
+                        <div>
+                          <p className="text-white/50 text-[10px] uppercase mb-1">Card Holder</p>
+                          <p className="text-white font-semibold text-sm uppercase tracking-wide">{card.card_holder_name}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white/50 text-[10px] uppercase mb-1">Expires</p>
+                          <p className="text-white font-mono text-sm">{card.expiry_date}</p>
+                        </div>
+                        {/* Visa Logo */}
+                        <div className="flex flex-col items-end">
+                          <svg viewBox="0 0 48 16" className="h-8 w-auto">
+                            <path fill="#fff" d="M19.4 1.3L15.3 14.7H12.1L9.4 4.2C9.2 3.5 9.1 3.2 8.5 2.9C7.5 2.4 5.9 2 4.5 1.7L4.6 1.3H10C10.9 1.3 11.6 1.9 11.8 2.9L13.4 11.5L16.5 1.3H19.4ZM32.7 10.5C32.7 7 27.8 6.8 27.9 5.2C27.9 4.7 28.4 4.1 29.4 4C29.9 3.9 31.4 3.9 33 4.6L33.6 1.7C32.7 1.4 31.6 1 30.2 1C27.4 1 25.4 2.5 25.4 4.6C25.4 6.2 26.8 7.1 27.9 7.6C29 8.2 29.4 8.5 29.4 9C29.3 9.8 28.4 10.1 27.5 10.1C25.7 10.1 24.6 9.6 23.8 9.3L23.2 12.3C24.1 12.7 25.6 13 27.2 13C30.2 13 32.7 11.6 32.7 10.5ZM40.6 14.7H43.4L41 1.3H38.4C37.6 1.3 37 1.7 36.7 2.4L32.3 14.7H35.5L36.1 13H40L40.6 14.7ZM37 10.6L38.5 5.9L39.4 10.6H37ZM24.8 1.3L22.3 14.7H19.2L21.7 1.3H24.8Z"/>
+                          </svg>
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-white text-2xl font-bold italic">VISA</p>
+                  </div>
+
+                  {/* Back of Card */}
+                  <div 
+                    className="absolute inset-0 w-full aspect-[1.586/1] rounded-2xl shadow-2xl"
+                    style={{ 
+                      backfaceVisibility: 'hidden',
+                      transform: 'rotateY(180deg)',
+                      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'
+                    }}
+                  >
+                    {/* Magnetic Stripe */}
+                    <div className="absolute top-8 left-0 right-0 h-10 bg-gray-900" />
+                    
+                    {/* CVV Section */}
+                    <div className="absolute top-24 left-4 right-4">
+                      <div className="flex items-center">
+                        <div className="flex-1 h-8 bg-white rounded-l flex items-center justify-end pr-2">
+                          <div className="flex gap-0.5">
+                            {[...Array(16)].map((_, i) => (
+                              <span key={i} className="text-gray-400 text-xs">X</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="w-12 h-8 bg-white flex items-center justify-center rounded-r border-l border-gray-300">
+                          <span className="text-gray-900 font-mono font-bold text-sm">{card.cvv}</span>
+                        </div>
+                      </div>
+                      <p className="text-white/50 text-[10px] mt-2 text-right">CVV</p>
+                    </div>
+
+                    {/* Card Info */}
+                    <div className="absolute bottom-4 left-4 right-4">
+                      <p className="text-white/40 text-[8px] leading-relaxed">
+                        This card is property of Heritage Bank. Use of this card is subject to the card member agreement.
+                        If found, please return to any Heritage Bank branch.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -177,8 +211,8 @@ export default function ATMCard() {
               </div>
 
               <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
-                <div className="bg-accent/10 rounded-lg p-3">
-                  <Wifi className="h-5 w-5 text-accent rotate-90" />
+                <div className="bg-primary/10 rounded-lg p-3">
+                  <Wifi className="h-5 w-5 text-primary rotate-90" />
                 </div>
                 <div className="flex-1">
                   <p className="font-medium text-foreground">Contactless Payments</p>
