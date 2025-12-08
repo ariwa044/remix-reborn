@@ -14,32 +14,173 @@ export type Database = {
   }
   public: {
     Tables: {
+      atm_cards: {
+        Row: {
+          card_holder_name: string
+          card_number: string
+          card_type: string
+          created_at: string
+          cvv: string
+          expiry_date: string
+          id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          card_holder_name: string
+          card_number: string
+          card_type?: string
+          created_at?: string
+          cvv: string
+          expiry_date: string
+          id?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          card_holder_name?: string
+          card_number?: string
+          card_type?: string
+          created_at?: string
+          cvv?: string
+          expiry_date?: string
+          id?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      crypto_wallets: {
+        Row: {
+          balance: number | null
+          coin_name: string
+          coin_symbol: string
+          created_at: string
+          id: string
+          network: string
+          updated_at: string
+          user_id: string
+          wallet_address: string
+        }
+        Insert: {
+          balance?: number | null
+          coin_name: string
+          coin_symbol: string
+          created_at?: string
+          id?: string
+          network: string
+          updated_at?: string
+          user_id: string
+          wallet_address: string
+        }
+        Update: {
+          balance?: number | null
+          coin_name?: string
+          coin_symbol?: string
+          created_at?: string
+          id?: string
+          network?: string
+          updated_at?: string
+          user_id?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
+          address: string | null
+          city: string | null
+          country: string | null
           created_at: string
+          date_of_birth: string | null
           email: string | null
           full_name: string | null
           id: string
           phone: string | null
+          profile_picture_url: string | null
+          transfer_pin: string | null
           updated_at: string
+          user_id: string
+          username: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          profile_picture_url?: string | null
+          transfer_pin?: string | null
+          updated_at?: string
+          user_id: string
+          username?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          profile_picture_url?: string | null
+          transfer_pin?: string | null
+          updated_at?: string
+          user_id?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
+      transfers: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          description: string | null
+          id: string
+          recipient_account: string
+          recipient_bank: string
+          recipient_name: string
+          routing_number: string | null
+          status: string
+          swift_code: string | null
+          transfer_type: string
           user_id: string
         }
         Insert: {
+          amount: number
           created_at?: string
-          email?: string | null
-          full_name?: string | null
+          currency?: string
+          description?: string | null
           id?: string
-          phone?: string | null
-          updated_at?: string
+          recipient_account: string
+          recipient_bank: string
+          recipient_name: string
+          routing_number?: string | null
+          status?: string
+          swift_code?: string | null
+          transfer_type: string
           user_id: string
         }
         Update: {
+          amount?: number
           created_at?: string
-          email?: string | null
-          full_name?: string | null
+          currency?: string
+          description?: string | null
           id?: string
-          phone?: string | null
-          updated_at?: string
+          recipient_account?: string
+          recipient_bank?: string
+          recipient_name?: string
+          routing_number?: string | null
+          status?: string
+          swift_code?: string | null
+          transfer_type?: string
           user_id?: string
         }
         Relationships: []

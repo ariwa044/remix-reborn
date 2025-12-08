@@ -120,16 +120,40 @@ export default function Dashboard() {
             {showBalance ? '$12,458.50' : '••••••••'}
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2">
+            <Button onClick={() => navigate('/transfer')} className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2">
               <Send className="h-4 w-4" /> Send
             </Button>
-            <Button className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2">
+            <Button onClick={() => navigate('/deposit')} className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2">
               <Download className="h-4 w-4" /> Receive
             </Button>
-            <Button className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2">
-              <ArrowUpRight className="h-4 w-4" /> Invest
+            <Button onClick={() => navigate('/crypto')} className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2">
+              <ArrowUpRight className="h-4 w-4" /> Crypto
             </Button>
           </div>
+        </div>
+
+        {/* Quick Actions Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <button onClick={() => navigate('/transfer')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <Send className="h-6 w-6 text-primary mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">Transfer</span>
+          </button>
+          <button onClick={() => navigate('/deposit')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <Download className="h-6 w-6 text-green-500 mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">Deposit</span>
+          </button>
+          <button onClick={() => navigate('/profile')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <Settings className="h-6 w-6 text-accent mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">Profile</span>
+          </button>
+          <button onClick={() => navigate('/crypto')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <TrendingUp className="h-6 w-6 text-orange-500 mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">Crypto</span>
+          </button>
+          <button onClick={() => navigate('/atm-card')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <CreditCard className="h-6 w-6 text-purple-500 mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">ATM Card</span>
+          </button>
         </div>
 
         {/* Quick Stats */}
