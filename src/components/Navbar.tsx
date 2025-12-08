@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, Home, Send, Download, TrendingUp, CreditCard, Settings, LogOut, User } from 'lucide-react';
+import { Menu, X, Home, Send, Download, TrendingUp, CreditCard, Settings, LogOut, User, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import { useAdmin } from '@/hooks/useAdmin';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 
 const navLinks = [
@@ -28,6 +29,7 @@ export const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const { isAdmin } = useAdmin();
 
   const handleAuthClick = () => {
     if (user) {
@@ -48,7 +50,9 @@ export const Navbar = () => {
                         location.pathname.startsWith('/deposit') || 
                         location.pathname.startsWith('/crypto') || 
                         location.pathname.startsWith('/atm-card') || 
-                        location.pathname.startsWith('/profile');
+                        location.pathname.startsWith('/profile') ||
+                        location.pathname.startsWith('/admin') ||
+                        location.pathname.startsWith('/send');
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -101,6 +105,19 @@ export const Navbar = () => {
                     {link.name}
                   </button>
                 ))}
+                {isAdmin && (
+                  <button
+                    onClick={() => navigate('/admin')}
+                    className={`text-sm transition-colors flex items-center gap-2 ${
+                      location.pathname === '/admin' 
+                        ? 'text-primary font-medium' 
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Shield className="h-4 w-4" />
+                    Admin
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -166,6 +183,22 @@ export const Navbar = () => {
                       {link.name}
                     </button>
                   ))}
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        navigate('/admin');
+                        setIsOpen(false);
+                      }}
+                      className={`text-sm transition-colors flex items-center gap-3 px-4 py-3 rounded-lg ${
+                        location.pathname === '/admin' 
+                          ? 'bg-primary/10 text-primary font-medium' 
+                          : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                      }`}
+                    >
+                      <Shield className="h-5 w-5" />
+                      Admin
+                    </button>
+                  )}
                   <div className="border-t border-border my-2" />
                   <button
                     onClick={handleSignOut}

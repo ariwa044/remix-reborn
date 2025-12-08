@@ -13,6 +13,7 @@ import MobileDeposit from "./pages/MobileDeposit";
 import Profile from "./pages/Profile";
 import Crypto from "./pages/Crypto";
 import ATMCard from "./pages/ATMCard";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
             <Route path="/profile" element={<Profile />} />
             <Route path="/crypto" element={<Crypto />} />
             <Route path="/atm-card" element={<ATMCard />} />
+            <Route path="/admin" element={<AdminDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
