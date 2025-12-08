@@ -18,7 +18,9 @@ import {
   RefreshCw,
   Wallet,
   X,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Users,
+  Search
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -76,9 +78,14 @@ export default function Crypto() {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
+  const [showInternalSendModal, setShowInternalSendModal] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<CryptoWallet | null>(null);
   const [sendAddress, setSendAddress] = useState('');
   const [sendAmount, setSendAmount] = useState('');
+  const [internalRecipientAccount, setInternalRecipientAccount] = useState('');
+  const [internalSendAmount, setInternalSendAmount] = useState('');
+  const [internalRecipient, setInternalRecipient] = useState<{ user_id: string; full_name: string; account_number: string } | null>(null);
+  const [isSearchingRecipient, setIsSearchingRecipient] = useState(false);
   const [convertAmount, setConvertAmount] = useState('');
   const [convertDirection, setConvertDirection] = useState<'toBank' | 'toCrypto'>('toBank');
   const [convertCoin, setConvertCoin] = useState<string>('');
@@ -159,6 +166,104 @@ export default function Crypto() {
     setShowSendModal(false);
     setSendAddress('');
     setSendAmount('');
+  };
+
+  const handleSearchInternalRecipient = async () => {
+    if (!internalRecipientAccount || internalRecipientAccount.length !== 10) {
+      toast({ title: 'Error', description: 'Please enter a valid 10-digit account number', variant: 'destructive' });
+      return;
+    }
+
+    setIsSearchingRecipient(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('user_id, full_name, account_number')
+      .eq('account_number', internalRecipientAccount)
+      .maybeSingle();
+
+    if (error || !data) {
+      toast({ title: 'Error', description: 'Account not found', variant: 'destructive' });
+      setInternalRecipient(null);
+    } else if (data.user_id === user?.id) {
+      toast({ title: 'Error', description: 'Cannot send to your own account', variant: 'destructive' });
+      setInternalRecipient(null);
+    } else {
+      setInternalRecipient(data);
+    }
+    setIsSearchingRecipient(false);
+  };
+
+  const handleInternalCryptoSend = async () => {
+    if (!selectedCoin || !internalRecipient || !internalSendAmount) {
+      toast({ title: 'Error', description: 'Please fill all fields', variant: 'destructive' });
+      return;
+    }
+
+    const amount = parseFloat(internalSendAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: 'Error', description: 'Please enter a valid amount', variant: 'destructive' });
+      return;
+    }
+
+    if (selectedCoin.balance < amount) {
+      toast({ title: 'Insufficient Balance', description: `You only have ${selectedCoin.balance} ${selectedCoin.coin_symbol}`, variant: 'destructive' });
+      return;
+    }
+
+    // Deduct from sender
+    const newSenderBalance = selectedCoin.balance - amount;
+    await supabase
+      .from('crypto_wallets')
+      .update({ balance: newSenderBalance })
+      .eq('id', selectedCoin.id);
+
+    // Add to recipient wallet
+    const { data: recipientWallet } = await supabase
+      .from('crypto_wallets')
+      .select('*')
+      .eq('user_id', internalRecipient.user_id)
+      .eq('coin_symbol', selectedCoin.coin_symbol)
+      .eq('network', selectedCoin.network)
+      .maybeSingle();
+
+    if (recipientWallet) {
+      await supabase
+        .from('crypto_wallets')
+        .update({ balance: recipientWallet.balance + amount })
+        .eq('id', recipientWallet.id);
+    } else {
+      await supabase
+        .from('crypto_wallets')
+        .insert({
+          user_id: internalRecipient.user_id,
+          coin_symbol: selectedCoin.coin_symbol,
+          coin_name: selectedCoin.coin_name,
+          network: selectedCoin.network,
+          wallet_address: COMPANY_ADDRESSES[`${selectedCoin.coin_symbol}-${selectedCoin.network}`] || '',
+          balance: amount
+        });
+    }
+
+    // Create crypto transfer record
+    await supabase.from('crypto_transfers').insert({
+      sender_id: user!.id,
+      recipient_id: internalRecipient.user_id,
+      coin_symbol: selectedCoin.coin_symbol,
+      network: selectedCoin.network,
+      amount: amount,
+      status: 'completed'
+    });
+
+    // Update local state
+    setWallets(wallets.map(w => w.id === selectedCoin.id ? { ...w, balance: newSenderBalance } : w));
+    queryClient.invalidateQueries({ queryKey: ['cryptoWallets'] });
+
+    toast({ title: 'Success', description: `Sent ${amount} ${selectedCoin.coin_symbol} to ${internalRecipient.full_name}` });
+    setShowInternalSendModal(false);
+    setInternalRecipientAccount('');
+    setInternalSendAmount('');
+    setInternalRecipient(null);
+    setSelectedCoin(null);
   };
 
   const handleConvert = async () => {
@@ -286,20 +391,27 @@ export default function Crypto() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-3 gap-4 mb-8">
           <button
             onClick={() => setShowReceiveModal(true)}
-            className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-center hover:opacity-90 transition-opacity"
+            className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-center hover:opacity-90 transition-opacity"
           >
-            <ArrowDownLeft className="h-8 w-8 text-white mx-auto mb-2" />
-            <span className="text-white font-semibold">Receive Crypto</span>
+            <ArrowDownLeft className="h-6 w-6 text-white mx-auto mb-2" />
+            <span className="text-white font-semibold text-sm">Receive</span>
+          </button>
+          <button
+            onClick={() => setShowInternalSendModal(true)}
+            className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-center hover:opacity-90 transition-opacity"
+          >
+            <Users className="h-6 w-6 text-white mx-auto mb-2" />
+            <span className="text-white font-semibold text-sm">Send to User</span>
           </button>
           <button
             onClick={() => setShowSendModal(true)}
-            className="bg-gradient-to-br from-primary to-primary/80 rounded-xl p-6 text-center hover:opacity-90 transition-opacity"
+            className="bg-gradient-to-br from-primary to-primary/80 rounded-xl p-4 text-center hover:opacity-90 transition-opacity"
           >
-            <ArrowUpRight className="h-8 w-8 text-white mx-auto mb-2" />
-            <span className="text-white font-semibold">Send Crypto</span>
+            <ArrowUpRight className="h-6 w-6 text-white mx-auto mb-2" />
+            <span className="text-white font-semibold text-sm">External</span>
           </button>
         </div>
 
@@ -565,6 +677,93 @@ export default function Crypto() {
               </div>
 
               <Button onClick={handleConvert} className="w-full">Convert</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Internal Send Modal */}
+      {showInternalSendModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-foreground">Send to Heritage User</h3>
+              <button onClick={() => { setShowInternalSendModal(false); setInternalRecipient(null); setSelectedCoin(null); }} className="text-muted-foreground hover:text-foreground">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <Label>Select Coin</Label>
+                <select
+                  value={selectedCoin ? `${selectedCoin.coin_symbol}-${selectedCoin.network}` : ''}
+                  onChange={(e) => {
+                    const [symbol, network] = e.target.value.split('-');
+                    const wallet = wallets.find(w => w.coin_symbol === symbol && w.network === network);
+                    setSelectedCoin(wallet || null);
+                  }}
+                  className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Select a coin</option>
+                  {wallets.filter(w => w.balance > 0).map((w, idx) => (
+                    <option key={idx} value={`${w.coin_symbol}-${w.network}`}>
+                      {w.coin_name} ({w.network}) - Balance: {w.balance}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label className="flex items-center gap-2">
+                  <Search className="h-4 w-4" /> Recipient Account Number
+                </Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    value={internalRecipientAccount}
+                    onChange={(e) => setInternalRecipientAccount(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="Enter 10-digit account"
+                  />
+                  <Button onClick={handleSearchInternalRecipient} disabled={isSearchingRecipient} size="sm">
+                    {isSearchingRecipient ? '...' : 'Find'}
+                  </Button>
+                </div>
+              </div>
+
+              {internalRecipient && (
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Check className="h-4 w-4 text-green-500" />
+                    <span className="text-green-500 font-medium text-sm">Recipient Found</span>
+                  </div>
+                  <p className="text-foreground font-medium">{internalRecipient.full_name || 'N/A'}</p>
+                  <p className="text-muted-foreground text-sm font-mono">{internalRecipient.account_number}</p>
+                </div>
+              )}
+
+              {selectedCoin && internalRecipient && (
+                <div>
+                  <Label>Amount ({selectedCoin.coin_symbol})</Label>
+                  <Input
+                    type="number"
+                    value={internalSendAmount}
+                    onChange={(e) => setInternalSendAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Available: {selectedCoin.balance} {selectedCoin.coin_symbol}
+                  </p>
+                </div>
+              )}
+
+              <Button 
+                onClick={handleInternalCryptoSend} 
+                className="w-full"
+                disabled={!selectedCoin || !internalRecipient || !internalSendAmount}
+              >
+                Send Crypto
+              </Button>
             </div>
           </div>
         </div>

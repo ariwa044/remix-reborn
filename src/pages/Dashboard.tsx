@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import bitpayLogo from '@/assets/bitpay-logo.png';
-import { CreditCard, Wallet, TrendingUp, Send, Download, ArrowUpRight, Bell, Settings, LogOut, Menu, X, Eye, EyeOff, RefreshCw, DollarSign, Landmark, PiggyBank } from 'lucide-react';
+import { CreditCard, Wallet, TrendingUp, Send, Download, ArrowUpRight, Bell, Settings, LogOut, Menu, X, Eye, EyeOff, RefreshCw, DollarSign, Landmark, PiggyBank, Users } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 interface Transfer {
@@ -29,6 +29,21 @@ export default function Dashboard() {
   const [showBalance, setShowBalance] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Fetch user profile with balance
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from('profiles')
+        .select('balance, savings_balance')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user
+  });
+
   // Fetch user transfers
   const { data: transfers = [], isLoading: transfersLoading } = useQuery({
     queryKey: ['transfers', user?.id],
@@ -41,6 +56,22 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
         .limit(5);
       return (data || []) as Transfer[];
+    },
+    enabled: !!user
+  });
+
+  // Fetch internal transfers
+  const { data: internalTransfers = [] } = useQuery({
+    queryKey: ['internalTransfers', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data } = await supabase
+        .from('internal_transfers')
+        .select('*')
+        .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      return data || [];
     },
     enabled: !!user
   });
@@ -86,9 +117,8 @@ export default function Dashboard() {
     return total + (wallet.balance || 0) * (priceData?.current_price || (wallet.coin_symbol === 'USDT' || wallet.coin_symbol === 'PI' ? 1 : 0));
   }, 0);
 
-  // For demo, bank balance starts at 0 for new users (no transactions)
-  const bankBalance = transfers.length > 0 ? 12458.50 : 0;
-  const savingsBalance = transfers.length > 0 ? 5200.00 : 0;
+  const bankBalance = profile?.balance || 0;
+  const savingsBalance = profile?.savings_balance || 0;
   const totalBalance = bankBalance + savingsBalance + totalCryptoBalance;
 
   useEffect(() => {
@@ -250,7 +280,11 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Actions Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
+          <button onClick={() => navigate('/send')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <Users className="h-6 w-6 text-blue-500 mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">Send</span>
+          </button>
           <button onClick={() => navigate('/transfer')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
             <Send className="h-6 w-6 text-primary mx-auto mb-2" />
             <span className="text-sm font-medium text-foreground">Transfer</span>
@@ -267,7 +301,7 @@ export default function Dashboard() {
             <TrendingUp className="h-6 w-6 text-orange-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-foreground">Crypto</span>
           </button>
-          <button onClick={() => navigate('/atm-card')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center col-span-2 md:col-span-1">
+          <button onClick={() => navigate('/atm-card')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
             <CreditCard className="h-6 w-6 text-purple-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-foreground">ATM Card</span>
           </button>

@@ -138,7 +138,7 @@ export default function Transfer() {
     setIsProcessing(true);
     const { data } = await supabase
       .from('profiles')
-      .select('transfer_pin')
+      .select('transfer_pin, balance')
       .eq('user_id', user!.id)
       .maybeSingle();
 
@@ -147,6 +147,21 @@ export default function Transfer() {
       setIsProcessing(false);
       return;
     }
+
+    const transferAmount = parseFloat(transferDetails.amount);
+    
+    // Check balance
+    if ((data?.balance || 0) < transferAmount) {
+      toast({ title: 'Insufficient Funds', description: 'You do not have enough balance for this transfer', variant: 'destructive' });
+      setIsProcessing(false);
+      return;
+    }
+
+    // Deduct from sender balance
+    await supabase
+      .from('profiles')
+      .update({ balance: (data?.balance || 0) - transferAmount })
+      .eq('user_id', user!.id);
 
     // Process transfer
     const { data: transfer, error } = await supabase
@@ -157,7 +172,7 @@ export default function Transfer() {
         recipient_name: transferDetails.recipientName,
         recipient_account: transferDetails.recipientAccount,
         recipient_bank: transferDetails.recipientBank,
-        amount: parseFloat(transferDetails.amount),
+        amount: transferAmount,
         currency: transferDetails.currency,
         swift_code: transferDetails.swiftCode || null,
         routing_number: transferDetails.routingNumber || null,
@@ -165,6 +180,19 @@ export default function Transfer() {
       })
       .select()
       .single();
+
+    // Add to transaction history
+    await supabase.from('transaction_history').insert({
+      user_id: user!.id,
+      transaction_type: transferType === 'local' ? 'local_transfer' : 'international_transfer',
+      amount: transferAmount,
+      recipient_name: transferDetails.recipientName,
+      recipient_account: transferDetails.recipientAccount,
+      recipient_bank: transferDetails.recipientBank,
+      description: transferDetails.description || `${transferType} transfer`,
+      currency: transferDetails.currency,
+      status: 'completed'
+    });
 
     if (error) {
       toast({ title: 'Error', description: 'Transfer failed', variant: 'destructive' });
