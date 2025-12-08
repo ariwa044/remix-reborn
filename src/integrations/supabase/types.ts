@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_logs: {
+        Row: {
+          action_type: string
+          admin_id: string
+          created_at: string
+          details: Json | null
+          id: string
+          target_user_id: string | null
+        }
+        Insert: {
+          action_type: string
+          admin_id: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          target_user_id?: string | null
+        }
+        Update: {
+          action_type?: string
+          admin_id?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
       atm_cards: {
         Row: {
           card_holder_name: string
@@ -89,6 +116,7 @@ export type Database = {
       profiles: {
         Row: {
           address: string | null
+          balance: number | null
           city: string | null
           country: string | null
           created_at: string
@@ -96,8 +124,11 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          is_admin: boolean | null
+          is_blocked: boolean | null
           phone: string | null
           profile_picture_url: string | null
+          savings_balance: number | null
           transfer_pin: string | null
           updated_at: string
           user_id: string
@@ -105,6 +136,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          balance?: number | null
           city?: string | null
           country?: string | null
           created_at?: string
@@ -112,8 +144,11 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          is_admin?: boolean | null
+          is_blocked?: boolean | null
           phone?: string | null
           profile_picture_url?: string | null
+          savings_balance?: number | null
           transfer_pin?: string | null
           updated_at?: string
           user_id: string
@@ -121,6 +156,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          balance?: number | null
           city?: string | null
           country?: string | null
           created_at?: string
@@ -128,12 +164,69 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          is_admin?: boolean | null
+          is_blocked?: boolean | null
           phone?: string | null
           profile_picture_url?: string | null
+          savings_balance?: number | null
           transfer_pin?: string | null
           updated_at?: string
           user_id?: string
           username?: string | null
+        }
+        Relationships: []
+      }
+      transaction_history: {
+        Row: {
+          amount: number
+          created_at: string
+          crypto_amount: number | null
+          crypto_symbol: string | null
+          currency: string | null
+          description: string | null
+          id: string
+          recipient_account: string | null
+          recipient_bank: string | null
+          recipient_name: string | null
+          reference_id: string | null
+          status: string | null
+          transaction_type: string
+          user_id: string
+          wallet_address: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          crypto_amount?: number | null
+          crypto_symbol?: string | null
+          currency?: string | null
+          description?: string | null
+          id?: string
+          recipient_account?: string | null
+          recipient_bank?: string | null
+          recipient_name?: string | null
+          reference_id?: string | null
+          status?: string | null
+          transaction_type: string
+          user_id: string
+          wallet_address?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          crypto_amount?: number | null
+          crypto_symbol?: string | null
+          currency?: string | null
+          description?: string | null
+          id?: string
+          recipient_account?: string | null
+          recipient_bank?: string | null
+          recipient_name?: string | null
+          reference_id?: string | null
+          status?: string | null
+          transaction_type?: string
+          user_id?: string
+          wallet_address?: string | null
         }
         Relationships: []
       }
