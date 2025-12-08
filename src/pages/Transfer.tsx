@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useTransferFee } from '@/hooks/useTransferFee';
+import { TransferReceipt } from '@/components/TransferReceipt';
+import { BlockedAccountModal } from '@/components/BlockedAccountModal';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 import {
   ArrowLeft,
@@ -15,12 +18,11 @@ import {
   CreditCard,
   DollarSign,
   FileText,
-  Check,
   AlertCircle
 } from 'lucide-react';
 
 type TransferType = 'local' | 'international';
-type Step = 'type' | 'details' | 'pin' | 'receipt';
+type Step = 'type' | 'details' | 'fee' | 'pin' | 'receipt';
 
 interface TransferDetails {
   recipientName: string;
@@ -37,6 +39,7 @@ export default function Transfer() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { transferFee, isLoading: feeLoading } = useTransferFee();
   
   const [step, setStep] = useState<Step>('type');
   const [transferType, setTransferType] = useState<TransferType>('local');
@@ -56,6 +59,9 @@ export default function Transfer() {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [transferId, setTransferId] = useState<string | null>(null);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [showBlockedModal, setShowBlockedModal] = useState(false);
+  const [userBalance, setUserBalance] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -68,11 +74,13 @@ export default function Transfer() {
       if (user) {
         const { data } = await supabase
           .from('profiles')
-          .select('transfer_pin')
+          .select('transfer_pin, balance, is_blocked')
           .eq('user_id', user.id)
           .maybeSingle();
         
         setHasPin(!!data?.transfer_pin);
+        setIsBlocked(data?.is_blocked || false);
+        setUserBalance(data?.balance || 0);
       }
     };
     checkPin();
@@ -90,7 +98,6 @@ export default function Transfer() {
       setPin(newPin);
     }
 
-    // Auto-focus next input
     if (value && index < 3) {
       const nextInput = document.getElementById(`${isConfirm ? 'confirm-' : ''}pin-${index + 1}`);
       nextInput?.focus();
@@ -136,31 +143,41 @@ export default function Transfer() {
     }
 
     setIsProcessing(true);
-    const { data } = await supabase
+    
+    // Check if account is blocked
+    const { data: profileCheck } = await supabase
       .from('profiles')
-      .select('transfer_pin, balance')
+      .select('transfer_pin, balance, is_blocked')
       .eq('user_id', user!.id)
       .maybeSingle();
 
-    if (data?.transfer_pin !== pinString) {
+    if (profileCheck?.transfer_pin !== pinString) {
       toast({ title: 'Error', description: 'Invalid PIN', variant: 'destructive' });
       setIsProcessing(false);
       return;
     }
 
-    const transferAmount = parseFloat(transferDetails.amount);
-    
-    // Check balance
-    if ((data?.balance || 0) < transferAmount) {
-      toast({ title: 'Insufficient Funds', description: 'You do not have enough balance for this transfer', variant: 'destructive' });
+    // Check if blocked
+    if (profileCheck?.is_blocked) {
+      setShowBlockedModal(true);
       setIsProcessing(false);
       return;
     }
 
-    // Deduct from sender balance
+    const transferAmount = parseFloat(transferDetails.amount);
+    const totalAmount = transferAmount + transferFee;
+    
+    // Check balance including fee
+    if ((profileCheck?.balance || 0) < totalAmount) {
+      toast({ title: 'Insufficient Funds', description: `You need $${totalAmount.toFixed(2)} (including $${transferFee} fee)`, variant: 'destructive' });
+      setIsProcessing(false);
+      return;
+    }
+
+    // Deduct from sender balance (amount + fee)
     await supabase
       .from('profiles')
-      .update({ balance: (data?.balance || 0) - transferAmount })
+      .update({ balance: (profileCheck?.balance || 0) - totalAmount })
       .eq('user_id', user!.id);
 
     // Process transfer
@@ -194,6 +211,17 @@ export default function Transfer() {
       status: 'completed'
     });
 
+    // Add fee transaction
+    if (transferFee > 0) {
+      await supabase.from('transaction_history').insert({
+        user_id: user!.id,
+        transaction_type: 'transfer_fee',
+        amount: transferFee,
+        description: 'Transfer fee',
+        status: 'completed'
+      });
+    }
+
     if (error) {
       toast({ title: 'Error', description: 'Transfer failed', variant: 'destructive' });
     } else {
@@ -218,19 +246,38 @@ export default function Transfer() {
       return;
     }
 
+    const transferAmount = parseFloat(transferDetails.amount);
+    const totalAmount = transferAmount + transferFee;
+
+    if (userBalance < totalAmount) {
+      toast({ 
+        title: 'Insufficient Funds', 
+        description: `You need $${totalAmount.toFixed(2)} (Amount: $${transferAmount.toFixed(2)} + Fee: $${transferFee.toFixed(2)})`, 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    setStep('fee');
+  };
+
+  const handleConfirmFee = () => {
     if (!hasPin) {
       setIsCreatingPin(true);
     }
     setStep('pin');
   };
 
-  if (loading || hasPin === null) {
+  if (loading || hasPin === null || feeLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-pulse text-primary">Loading...</div>
       </div>
     );
   }
+
+  const transferAmount = parseFloat(transferDetails.amount) || 0;
+  const totalAmount = transferAmount + transferFee;
 
   return (
     <div className="min-h-screen bg-background">
@@ -246,6 +293,12 @@ export default function Transfer() {
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-lg">
+        {/* Balance Display */}
+        <div className="bg-gradient-to-br from-primary to-primary/80 rounded-xl p-4 mb-6 text-white text-center">
+          <p className="text-sm text-white/80">Available Balance</p>
+          <p className="text-2xl font-bold">${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+        </div>
+
         {/* Step: Choose Transfer Type */}
         {step === 'type' && (
           <div className="space-y-6">
@@ -409,6 +462,51 @@ export default function Transfer() {
           </form>
         )}
 
+        {/* Step: Fee Confirmation */}
+        {step === 'fee' && (
+          <div className="space-y-6">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold text-foreground mb-2">Transfer Fee</h2>
+              <p className="text-muted-foreground">Review transfer details and fee</p>
+            </div>
+
+            <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Transfer Amount</span>
+                <span className="text-foreground font-medium">${transferAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Transfer Fee</span>
+                <span className="text-foreground font-medium">${transferFee.toFixed(2)}</span>
+              </div>
+              <div className="border-t border-border pt-4">
+                <div className="flex justify-between">
+                  <span className="text-foreground font-semibold">Total Amount</span>
+                  <span className="text-primary font-bold text-xl">${totalAmount.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-muted/50 border border-border rounded-xl p-4">
+              <div className="flex gap-3">
+                <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-muted-foreground">
+                  A transfer fee of ${transferFee.toFixed(2)} will be charged for this transaction. This fee is non-refundable.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setStep('details')} className="flex-1">
+                Back
+              </Button>
+              <Button onClick={handleConfirmFee} className="flex-1">
+                Confirm & Pay
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Step: PIN */}
         {step === 'pin' && (
           <div className="space-y-6">
@@ -488,76 +586,27 @@ export default function Transfer() {
         )}
 
         {/* Step: Receipt */}
-        {step === 'receipt' && (
-          <div className="space-y-6">
-            <div className="bg-card border border-border rounded-2xl p-8 relative overflow-hidden">
-              {/* Watermark */}
-              <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none">
-                <span className="text-8xl font-bold text-foreground rotate-[-30deg]">HERITAGE</span>
-              </div>
-
-              <div className="relative z-10">
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Check className="h-8 w-8 text-green-500" />
-                  </div>
-                  <h2 className="text-2xl font-bold text-foreground">Transfer Successful!</h2>
-                  <p className="text-muted-foreground">Your transfer has been processed</p>
-                </div>
-
-                <div className="border-t border-b border-border py-6 my-6 space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Transaction ID</span>
-                    <span className="font-mono text-sm text-foreground">{transferId?.slice(0, 8).toUpperCase()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Transfer Type</span>
-                    <span className="text-foreground capitalize">{transferType}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Recipient</span>
-                    <span className="text-foreground">{transferDetails.recipientName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Account</span>
-                    <span className="text-foreground">****{transferDetails.recipientAccount.slice(-4)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Bank</span>
-                    <span className="text-foreground">{transferDetails.recipientBank}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-semibold">
-                    <span className="text-muted-foreground">Amount</span>
-                    <span className="text-primary">{transferDetails.currency} {parseFloat(transferDetails.amount).toFixed(2)}</span>
-                  </div>
-                  {transferDetails.description && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Description</span>
-                      <span className="text-foreground">{transferDetails.description}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Date</span>
-                    <span className="text-foreground">{new Date().toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Status</span>
-                    <span className="text-green-500">Completed</span>
-                  </div>
-                </div>
-
-                <div className="text-center text-sm text-muted-foreground">
-                  <p>Heritage Bank • Secure Banking</p>
-                </div>
-              </div>
-            </div>
-
-            <Button onClick={() => navigate('/dashboard')} className="w-full">
-              Back to Dashboard
-            </Button>
-          </div>
+        {step === 'receipt' && transferId && (
+          <TransferReceipt
+            amount={parseFloat(transferDetails.amount)}
+            recipientName={transferDetails.recipientName}
+            recipientAccount={transferDetails.recipientAccount}
+            recipientBank={transferDetails.recipientBank}
+            transferType={transferType}
+            transactionId={transferId}
+            date={new Date()}
+            description={transferDetails.description}
+            currency={transferDetails.currency}
+            onClose={() => navigate('/dashboard')}
+          />
         )}
       </main>
+
+      {/* Blocked Account Modal */}
+      <BlockedAccountModal 
+        isOpen={showBlockedModal} 
+        onClose={() => setShowBlockedModal(false)} 
+      />
     </div>
   );
 }
