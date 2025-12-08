@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { TransferReceipt } from '@/components/TransferReceipt';
+import { BlockedAccountModal } from '@/components/BlockedAccountModal';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 import {
   ArrowLeft,
@@ -45,6 +47,7 @@ export default function InternalTransfer() {
   const [searchError, setSearchError] = useState('');
   const [userBalance, setUserBalance] = useState(0);
   const [transferId, setTransferId] = useState<string | null>(null);
+  const [showBlockedModal, setShowBlockedModal] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -155,12 +158,19 @@ export default function InternalTransfer() {
     setIsProcessing(true);
     const { data: profileData } = await supabase
       .from('profiles')
-      .select('transfer_pin, balance')
+      .select('transfer_pin, balance, is_blocked')
       .eq('user_id', user!.id)
       .maybeSingle();
 
     if (profileData?.transfer_pin !== pinString) {
       toast({ title: 'Error', description: 'Invalid PIN', variant: 'destructive' });
+      setIsProcessing(false);
+      return;
+    }
+
+    // Check if account is blocked
+    if (profileData?.is_blocked) {
+      setShowBlockedModal(true);
       setIsProcessing(false);
       return;
     }
@@ -463,59 +473,27 @@ export default function InternalTransfer() {
         )}
 
         {/* Step: Receipt */}
-        {step === 'receipt' && (
-          <div className="space-y-6">
-            <div className="bg-card border border-border rounded-2xl p-8 relative overflow-hidden">
-              <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none">
-                <span className="text-8xl font-bold text-foreground rotate-[-30deg]">HERITAGE</span>
-              </div>
-
-              <div className="relative z-10">
-                <div className="text-center mb-6">
-                  <div className="bg-green-500/10 rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                    <Check className="h-8 w-8 text-green-500" />
-                  </div>
-                  <h2 className="text-2xl font-bold text-foreground">Transfer Successful</h2>
-                  <p className="text-muted-foreground">Your transfer has been completed</p>
-                </div>
-
-                <div className="space-y-3 border-t border-border pt-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Amount</span>
-                    <span className="text-foreground font-semibold">${parseFloat(amount).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Recipient</span>
-                    <span className="text-foreground">{recipient?.full_name}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Account</span>
-                    <span className="text-foreground font-mono">{recipient?.account_number}</span>
-                  </div>
-                  {description && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Description</span>
-                      <span className="text-foreground">{description}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Reference</span>
-                    <span className="text-foreground font-mono text-xs">{transferId?.slice(0, 8)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Date</span>
-                    <span className="text-foreground">{new Date().toLocaleDateString()}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <Button onClick={() => navigate('/dashboard')} className="w-full">
-              Back to Dashboard
-            </Button>
-          </div>
+        {step === 'receipt' && transferId && recipient && (
+          <TransferReceipt
+            amount={parseFloat(amount)}
+            recipientName={recipient.full_name || 'N/A'}
+            recipientAccount={recipient.account_number}
+            recipientBank="Heritage Bank"
+            transferType="internal"
+            transactionId={transferId}
+            date={new Date()}
+            description={description}
+            currency="USD"
+            onClose={() => navigate('/dashboard')}
+          />
         )}
       </main>
+
+      {/* Blocked Account Modal */}
+      <BlockedAccountModal 
+        isOpen={showBlockedModal} 
+        onClose={() => setShowBlockedModal(false)} 
+      />
     </div>
   );
 }
