@@ -77,6 +77,39 @@ export type Database = {
         }
         Relationships: []
       }
+      crypto_transfers: {
+        Row: {
+          amount: number
+          coin_symbol: string
+          created_at: string
+          id: string
+          network: string
+          recipient_id: string
+          sender_id: string
+          status: string
+        }
+        Insert: {
+          amount: number
+          coin_symbol: string
+          created_at?: string
+          id?: string
+          network: string
+          recipient_id: string
+          sender_id: string
+          status?: string
+        }
+        Update: {
+          amount?: number
+          coin_symbol?: string
+          created_at?: string
+          id?: string
+          network?: string
+          recipient_id?: string
+          sender_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       crypto_wallets: {
         Row: {
           balance: number | null
@@ -113,8 +146,39 @@ export type Database = {
         }
         Relationships: []
       }
+      internal_transfers: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          recipient_id: string
+          sender_id: string
+          status: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          recipient_id: string
+          sender_id: string
+          status?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          recipient_id?: string
+          sender_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
+          account_number: string | null
           address: string | null
           balance: number | null
           city: string | null
@@ -135,6 +199,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          account_number?: string | null
           address?: string | null
           balance?: number | null
           city?: string | null
@@ -155,6 +220,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          account_number?: string | null
           address?: string | null
           balance?: number | null
           city?: string | null
@@ -283,7 +349,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_account_number: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never

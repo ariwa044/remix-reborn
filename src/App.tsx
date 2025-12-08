@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Transfer from "./pages/Transfer";
+import InternalTransfer from "./pages/InternalTransfer";
 import MobileDeposit from "./pages/MobileDeposit";
 import Profile from "./pages/Profile";
 import Crypto from "./pages/Crypto";
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/transfer" element={<Transfer />} />
+            <Route path="/send" element={<InternalTransfer />} />
             <Route path="/deposit" element={<MobileDeposit />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/crypto" element={<Crypto />} />

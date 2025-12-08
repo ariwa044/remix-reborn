@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 import { ArrowLeft, Copy, Check, Building2, User, Shield, Clock, HelpCircle } from 'lucide-react';
@@ -11,6 +12,9 @@ export default function MobileDeposit() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [copied, setCopied] = useState<string | null>(null);
+  const [accountNumber, setAccountNumber] = useState<string>('');
+  const [fullName, setFullName] = useState<string>('');
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -18,7 +22,27 @@ export default function MobileDeposit() {
     }
   }, [user, loading, navigate]);
 
-  if (loading) {
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user) return;
+      
+      const { data } = await supabase
+        .from('profiles')
+        .select('account_number, full_name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (data) {
+        setAccountNumber(data.account_number || '');
+        setFullName(data.full_name || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Account Holder');
+      }
+      setIsLoadingProfile(false);
+    };
+
+    fetchProfile();
+  }, [user]);
+
+  if (loading || isLoadingProfile) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-pulse text-primary">Loading...</div>
@@ -28,10 +52,7 @@ export default function MobileDeposit() {
 
   if (!user) return null;
 
-  // Generate account number from user ID (demo purposes)
-  const accountNumber = '1' + user.id.replace(/-/g, '').slice(0, 9);
   const routingNumber = '021000089';
-  const fullName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Account Holder';
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
