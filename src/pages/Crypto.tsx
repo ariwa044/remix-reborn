@@ -17,9 +17,10 @@ import {
   TrendingDown,
   RefreshCw,
   Wallet,
-  X
+  X,
+  ArrowRightLeft
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface CryptoPrice {
   id: string;
@@ -31,12 +32,26 @@ interface CryptoPrice {
 }
 
 interface CryptoWallet {
+  id: string;
   coin_symbol: string;
   coin_name: string;
   wallet_address: string;
   network: string;
   balance: number;
 }
+
+// Company deposit addresses for users to receive crypto
+const COMPANY_ADDRESSES: Record<string, string> = {
+  'BTC-Bitcoin': 'bc1qhwutfxhl9062uxjswwgc7dr4zv8fwkekm4u42s',
+  'ETH-ERC20': '0xc254e04bf79df093e821ba9e8e8f366e01b36d66',
+  'BNB-BEP20': '0xc254e04bf79df093e821ba9e8e8f366e01b36d66',
+  'USDT-BEP20': '0xc254e04bf79df093e821ba9e8e8f366e01b36d66',
+  'USDT-ERC20': '0xc254e04bf79df093e821ba9e8e8f366e01b36d66',
+  'SOL-Solana': 'HqZDakA7ELoKJ4vJH1NUXBC2B4qRra4JauDWvvmK4xqn',
+  'USDT-TRC20': 'TVvsMrne5bPZE2rdAUCbDAfQCYvSZcdpYz',
+  'PI-Pi Network': 'GAVBCFVO4BES4TI35D6Q6M6KDVUZVL2B5FHJNN3AZ76E5NI27VEBZCWJ',
+  'XRP-Ripple': 'r4KpqYeisKn15n1Kr6dfYNPHj83WVBKCTZ'
+};
 
 const SUPPORTED_COINS = [
   { symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin', coingeckoId: 'bitcoin' },
@@ -50,46 +65,23 @@ const SUPPORTED_COINS = [
   { symbol: 'PI', name: 'Pi Network', network: 'Pi Network', coingeckoId: 'pi-network' }
 ];
 
-const generateWalletAddress = (symbol: string, network: string): string => {
-  const chars = 'abcdef0123456789';
-  let prefix = '';
-  let length = 40;
-  
-  if (symbol === 'BTC') {
-    prefix = 'bc1q';
-    length = 38;
-  } else if (network === 'TRC20') {
-    prefix = 'T';
-    length = 33;
-  } else if (symbol === 'XRP') {
-    prefix = 'r';
-    length = 33;
-  } else if (symbol === 'SOL') {
-    const solChars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789';
-    let addr = '';
-    for (let i = 0; i < 44; i++) addr += solChars[Math.floor(Math.random() * solChars.length)];
-    return addr;
-  } else {
-    prefix = '0x';
-  }
-  
-  let addr = prefix;
-  for (let i = 0; i < length; i++) addr += chars[Math.floor(Math.random() * chars.length)];
-  return addr;
-};
-
 export default function Crypto() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [wallets, setWallets] = useState<CryptoWallet[]>([]);
   const [isLoadingWallets, setIsLoadingWallets] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<CryptoWallet | null>(null);
   const [sendAddress, setSendAddress] = useState('');
   const [sendAmount, setSendAmount] = useState('');
+  const [convertAmount, setConvertAmount] = useState('');
+  const [convertDirection, setConvertDirection] = useState<'toBank' | 'toCrypto'>('toBank');
+  const [convertCoin, setConvertCoin] = useState<string>('');
 
   // Fetch crypto prices from CoinGecko
   const { data: prices, isLoading: pricesLoading, refetch: refetchPrices } = useQuery({
@@ -102,7 +94,7 @@ export default function Crypto() {
       if (!res.ok) throw new Error('Failed to fetch prices');
       return res.json() as Promise<CryptoPrice[]>;
     },
-    refetchInterval: 30000 // Refresh every 30 seconds
+    refetchInterval: 30000
   });
 
   useEffect(() => {
@@ -123,13 +115,12 @@ export default function Crypto() {
       if (existingWallets && existingWallets.length > 0) {
         setWallets(existingWallets);
       } else {
-        // Generate wallets for all supported coins
         const newWallets = SUPPORTED_COINS.map(coin => ({
           user_id: user.id,
           coin_symbol: coin.symbol,
           coin_name: coin.name,
           network: coin.network,
-          wallet_address: generateWalletAddress(coin.symbol, coin.network),
+          wallet_address: COMPANY_ADDRESSES[`${coin.symbol}-${coin.network}`] || '',
           balance: 0
         }));
 
@@ -170,6 +161,83 @@ export default function Crypto() {
     setSendAmount('');
   };
 
+  const handleConvert = async () => {
+    if (!convertAmount || !convertCoin) {
+      toast({ title: 'Error', description: 'Please fill all fields', variant: 'destructive' });
+      return;
+    }
+
+    const amount = parseFloat(convertAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: 'Error', description: 'Please enter a valid amount', variant: 'destructive' });
+      return;
+    }
+
+    const [symbol, network] = convertCoin.split('-');
+    const wallet = wallets.find(w => w.coin_symbol === symbol && w.network === network);
+    const coinInfo = SUPPORTED_COINS.find(c => c.symbol === symbol && c.network === network);
+    const priceData = coinInfo ? getPrice(coinInfo.coingeckoId) : null;
+    const rate = priceData?.current_price || (symbol === 'USDT' ? 1 : 0);
+
+    if (convertDirection === 'toBank') {
+      // Convert crypto to bank balance
+      if (!wallet || wallet.balance < amount) {
+        toast({ title: 'Error', description: 'Insufficient crypto balance', variant: 'destructive' });
+        return;
+      }
+
+      const usdAmount = amount * rate;
+      const newBalance = wallet.balance - amount;
+
+      const { error } = await supabase
+        .from('crypto_wallets')
+        .update({ balance: newBalance })
+        .eq('id', wallet.id);
+
+      if (error) {
+        toast({ title: 'Error', description: 'Failed to convert', variant: 'destructive' });
+        return;
+      }
+
+      setWallets(wallets.map(w => w.id === wallet.id ? { ...w, balance: newBalance } : w));
+      queryClient.invalidateQueries({ queryKey: ['cryptoWallets'] });
+      toast({ title: 'Conversion Successful', description: `Converted ${amount} ${symbol} to $${usdAmount.toFixed(2)} in your bank account` });
+    } else {
+      // Convert bank balance to crypto
+      const cryptoAmount = amount / rate;
+      const newBalance = (wallet?.balance || 0) + cryptoAmount;
+
+      if (wallet) {
+        const { error } = await supabase
+          .from('crypto_wallets')
+          .update({ balance: newBalance })
+          .eq('id', wallet.id);
+
+        if (error) {
+          toast({ title: 'Error', description: 'Failed to convert', variant: 'destructive' });
+          return;
+        }
+
+        setWallets(wallets.map(w => w.id === wallet.id ? { ...w, balance: newBalance } : w));
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['cryptoWallets'] });
+      toast({ title: 'Conversion Successful', description: `Converted $${amount} to ${cryptoAmount.toFixed(8)} ${symbol}` });
+    }
+
+    setShowConvertModal(false);
+    setConvertAmount('');
+    setConvertCoin('');
+  };
+
+  // Calculate total crypto balance in USD
+  const totalCryptoBalance = wallets.reduce((total, wallet) => {
+    const coinInfo = SUPPORTED_COINS.find(c => c.symbol === wallet.coin_symbol && c.network === wallet.network);
+    const priceData = coinInfo ? getPrice(coinInfo.coingeckoId) : null;
+    const rate = priceData?.current_price || (wallet.coin_symbol === 'USDT' || wallet.coin_symbol === 'PI' ? 1 : 0);
+    return total + (wallet.balance || 0) * rate;
+  }, 0);
+
   if (loading || isLoadingWallets) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -203,6 +271,20 @@ export default function Crypto() {
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-2xl">
+        {/* Total Crypto Balance */}
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 mb-8 text-center">
+          <p className="text-white/80 text-sm mb-2">Total Crypto Balance</p>
+          <p className="text-white text-4xl font-bold mb-4">
+            ${totalCryptoBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <Button 
+            onClick={() => setShowConvertModal(true)}
+            className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2"
+          >
+            <ArrowRightLeft className="h-4 w-4" /> Convert
+          </Button>
+        </div>
+
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-4 mb-8">
           <button
@@ -214,7 +296,7 @@ export default function Crypto() {
           </button>
           <button
             onClick={() => setShowSendModal(true)}
-            className="bg-gradient-to-br from-primary to-accent rounded-xl p-6 text-center hover:opacity-90 transition-opacity"
+            className="bg-gradient-to-br from-primary to-primary/80 rounded-xl p-6 text-center hover:opacity-90 transition-opacity"
           >
             <ArrowUpRight className="h-8 w-8 text-white mx-auto mb-2" />
             <span className="text-white font-semibold">Send Crypto</span>
@@ -259,6 +341,8 @@ export default function Crypto() {
             {wallets.map((wallet, idx) => {
               const coinInfo = SUPPORTED_COINS.find(c => c.symbol === wallet.coin_symbol && c.network === wallet.network);
               const priceData = coinInfo ? getPrice(coinInfo.coingeckoId) : null;
+              const companyAddress = COMPANY_ADDRESSES[`${wallet.coin_symbol}-${wallet.network}`];
+              const rate = priceData?.current_price || (wallet.coin_symbol === 'USDT' || wallet.coin_symbol === 'PI' ? 1 : 0);
               
               return (
                 <div key={idx} className="bg-card border border-border rounded-xl p-4">
@@ -277,19 +361,19 @@ export default function Crypto() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-foreground">{wallet.balance} {wallet.coin_symbol}</p>
+                      <p className="font-bold text-lg text-foreground">{wallet.balance.toFixed(wallet.coin_symbol === 'USDT' ? 2 : 8)} {wallet.coin_symbol}</p>
                       <p className="text-sm text-muted-foreground">
-                        ${(wallet.balance * (priceData?.current_price || 0)).toFixed(2)}
+                        ${((wallet.balance || 0) * rate).toFixed(2)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 bg-secondary/50 rounded-lg p-2">
-                    <code className="flex-1 text-xs text-muted-foreground truncate">{wallet.wallet_address}</code>
+                    <code className="flex-1 text-xs text-muted-foreground truncate">{companyAddress || wallet.wallet_address}</code>
                     <button
-                      onClick={() => copyToClipboard(wallet.wallet_address, wallet.coin_symbol)}
+                      onClick={() => copyToClipboard(companyAddress || wallet.wallet_address, wallet.coin_symbol + wallet.network)}
                       className="text-muted-foreground hover:text-primary"
                     >
-                      {copied === wallet.coin_symbol ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                      {copied === wallet.coin_symbol + wallet.network ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
@@ -325,7 +409,7 @@ export default function Crypto() {
                   <option value="">Select a coin</option>
                   {wallets.map((w, idx) => (
                     <option key={idx} value={`${w.coin_symbol}-${w.network}`}>
-                      {w.coin_name} ({w.network})
+                      {w.coin_name} ({w.network}) - Balance: {w.balance}
                     </option>
                   ))}
                 </select>
@@ -369,30 +453,118 @@ export default function Crypto() {
               </button>
             </div>
             
-            <p className="text-muted-foreground mb-4">Select a wallet to receive funds:</p>
+            <p className="text-muted-foreground mb-4">Send crypto to these addresses to fund your account:</p>
             
             <div className="space-y-3">
-              {wallets.map((wallet, idx) => (
-                <div key={idx} className="bg-secondary/50 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-foreground">{wallet.coin_name}</span>
-                    <span className="text-xs text-muted-foreground">{wallet.network}</span>
+              {wallets.map((wallet, idx) => {
+                const companyAddress = COMPANY_ADDRESSES[`${wallet.coin_symbol}-${wallet.network}`];
+                return (
+                  <div key={idx} className="bg-secondary/50 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-foreground">{wallet.coin_name}</span>
+                      <span className="text-xs text-muted-foreground">{wallet.network}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs text-muted-foreground break-all">{companyAddress}</code>
+                      <button
+                        onClick={() => copyToClipboard(companyAddress, `recv-${wallet.coin_symbol}-${wallet.network}`)}
+                        className="text-muted-foreground hover:text-primary shrink-0"
+                      >
+                        {copied === `recv-${wallet.coin_symbol}-${wallet.network}` ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs text-muted-foreground break-all">{wallet.wallet_address}</code>
-                    <button
-                      onClick={() => copyToClipboard(wallet.wallet_address, `recv-${wallet.coin_symbol}-${wallet.network}`)}
-                      className="text-muted-foreground hover:text-primary shrink-0"
-                    >
-                      {copied === `recv-${wallet.coin_symbol}-${wallet.network}` ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Convert Modal */}
+      {showConvertModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-foreground">Convert</h3>
+              <button onClick={() => setShowConvertModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Direction Toggle */}
+              <div className="flex gap-2">
+                <Button 
+                  variant={convertDirection === 'toBank' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => setConvertDirection('toBank')}
+                >
+                  Crypto → Bank
+                </Button>
+                <Button 
+                  variant={convertDirection === 'toCrypto' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => setConvertDirection('toCrypto')}
+                >
+                  Bank → Crypto
+                </Button>
+              </div>
+
+              <div>
+                <Label>Select Cryptocurrency</Label>
+                <select
+                  value={convertCoin}
+                  onChange={(e) => setConvertCoin(e.target.value)}
+                  className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Select a coin</option>
+                  {wallets.map((w, idx) => {
+                    const coinInfo = SUPPORTED_COINS.find(c => c.symbol === w.coin_symbol && c.network === w.network);
+                    const priceData = coinInfo ? getPrice(coinInfo.coingeckoId) : null;
+                    const rate = priceData?.current_price || (w.coin_symbol === 'USDT' ? 1 : 0);
+                    return (
+                      <option key={idx} value={`${w.coin_symbol}-${w.network}`}>
+                        {w.coin_name} ({w.network}) - Balance: {w.balance} (${(w.balance * rate).toFixed(2)})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <Label>{convertDirection === 'toBank' ? 'Crypto Amount' : 'USD Amount'}</Label>
+                <Input
+                  type="number"
+                  value={convertAmount}
+                  onChange={(e) => setConvertAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="mt-1"
+                />
+                {convertCoin && convertAmount && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    {(() => {
+                      const [symbol, network] = convertCoin.split('-');
+                      const coinInfo = SUPPORTED_COINS.find(c => c.symbol === symbol && c.network === network);
+                      const priceData = coinInfo ? getPrice(coinInfo.coingeckoId) : null;
+                      const rate = priceData?.current_price || (symbol === 'USDT' ? 1 : 0);
+                      const amount = parseFloat(convertAmount) || 0;
+                      
+                      if (convertDirection === 'toBank') {
+                        return `≈ $${(amount * rate).toFixed(2)} USD`;
+                      } else {
+                        return `≈ ${(amount / rate).toFixed(8)} ${symbol}`;
+                      }
+                    })()}
+                  </p>
+                )}
+              </div>
+
+              <Button onClick={handleConvert} className="w-full">Convert</Button>
             </div>
           </div>
         </div>
