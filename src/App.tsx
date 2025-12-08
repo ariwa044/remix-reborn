@@ -7,6 +7,11 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import Transfer from "./pages/Transfer";
+import MobileDeposit from "./pages/MobileDeposit";
+import Profile from "./pages/Profile";
+import Crypto from "./pages/Crypto";
+import ATMCard from "./pages/ATMCard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,7 +27,11 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="/transfer" element={<Transfer />} />
+            <Route path="/deposit" element={<MobileDeposit />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/crypto" element={<Crypto />} />
+            <Route path="/atm-card" element={<ATMCard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
