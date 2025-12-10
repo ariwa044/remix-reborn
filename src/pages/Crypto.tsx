@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { sendTransactionAlert } from '@/hooks/useTransactionAlert';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 import { ArrowLeft, ArrowUpRight, ArrowDownLeft, Copy, Check, TrendingUp, TrendingDown, RefreshCw, Wallet, X, ArrowRightLeft, Users, Search, AlertCircle } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -464,6 +465,48 @@ export default function Crypto() {
     setInternalSendAmount('');
     setInternalRecipient(null);
     setSelectedCoin(null);
+    
+    // Send email alerts
+    const { data: senderProfile } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('user_id', user!.id)
+      .maybeSingle();
+    
+    if (senderProfile?.email) {
+      sendTransactionAlert({
+        email: senderProfile.email,
+        fullName: senderProfile.full_name || 'Customer',
+        type: 'debit',
+        amount: amount,
+        currency: selectedCoin.coin_symbol,
+        description: `Crypto transfer to ${internalRecipient.full_name}`,
+        balance: newSenderBalance,
+        transactionId: transferData?.id || '',
+        recipientName: internalRecipient.full_name,
+        recipientAccount: internalRecipient.account_number,
+      });
+    }
+    
+    const { data: recipientProfile } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('user_id', internalRecipient.user_id)
+      .maybeSingle();
+    
+    if (recipientProfile?.email) {
+      const recipientNewBalance = recipientWallet ? recipientWallet.balance + amount : amount;
+      sendTransactionAlert({
+        email: recipientProfile.email,
+        fullName: recipientProfile.full_name || 'Customer',
+        type: 'credit',
+        amount: amount,
+        currency: selectedCoin.coin_symbol,
+        description: `Crypto received from ${senderProfile?.full_name || 'BitPay User'}`,
+        balance: recipientNewBalance,
+        transactionId: transferData?.id || '',
+      });
+    }
   };
   const handleConvert = async () => {
     if (!convertAmount || !convertCoin) {

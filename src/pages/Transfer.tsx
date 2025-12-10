@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTransferFee } from '@/hooks/useTransferFee';
 import { TransferReceipt } from '@/components/TransferReceipt';
 import { BlockedAccountModal } from '@/components/BlockedAccountModal';
+import { sendTransactionAlert } from '@/hooks/useTransactionAlert';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 import {
   ArrowLeft,
@@ -228,6 +229,28 @@ export default function Transfer() {
       setTransferId(transfer.id);
       setStep('receipt');
       toast({ title: 'Success', description: 'Transfer completed successfully' });
+      
+      // Send debit alert email
+      const { data: senderProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email, balance')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      
+      if (senderProfile?.email) {
+        sendTransactionAlert({
+          email: senderProfile.email,
+          fullName: senderProfile.full_name || 'Customer',
+          type: 'debit',
+          amount: transferAmount,
+          currency: transferDetails.currency,
+          description: transferDetails.description || `${transferType} transfer to ${transferDetails.recipientName}`,
+          balance: senderProfile.balance || 0,
+          transactionId: transfer.id,
+          recipientName: transferDetails.recipientName,
+          recipientAccount: transferDetails.recipientAccount,
+        });
+      }
     }
     setIsProcessing(false);
   };
