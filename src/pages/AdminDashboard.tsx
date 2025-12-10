@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { 
   Users, DollarSign, CreditCard, ArrowUpDown, Shield, Search, Edit, Ban, CheckCircle, 
   Plus, Settings, Bitcoin, LayoutDashboard, Wallet, ArrowLeftRight, Receipt, Building, LogOut,
-  Eye, ArrowDownCircle, ArrowUpCircle, X
+  Eye, ArrowDownCircle, ArrowUpCircle, X, Minus
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
@@ -28,6 +28,8 @@ const CRYPTO_COINS = [
   { symbol: 'PI', name: 'Pi Network', network: 'Pi Network' },
   { symbol: 'BNB', name: 'Binance Coin', network: 'BSC' },
   { symbol: 'XRP', name: 'Ripple', network: 'Ripple' },
+  { symbol: 'SOL', name: 'Solana', network: 'Solana' },
+  { symbol: 'DOGE', name: 'Dogecoin', network: 'Dogecoin' },
 ];
 
 type AdminSection = 'dashboard' | 'users' | 'balances' | 'crypto-funding' | 'wallets' | 'pending-transfers' | 'crypto-fees' | 'bank-fees' | 'settings';
@@ -45,14 +47,18 @@ const AdminDashboard = () => {
   const [fundAccountOpen, setFundAccountOpen] = useState(false);
   const [fundCryptoOpen, setFundCryptoOpen] = useState(false);
   const [userDetailsOpen, setUserDetailsOpen] = useState(false);
+  const [walletEditOpen, setWalletEditOpen] = useState(false);
+  const [selectedWalletCoin, setSelectedWalletCoin] = useState<any>(null);
+  const [newWalletAddress, setNewWalletAddress] = useState('');
   const [newBalance, setNewBalance] = useState('');
   const [newSavingsBalance, setNewSavingsBalance] = useState('');
   const [fundAmount, setFundAmount] = useState('');
   const [fundDescription, setFundDescription] = useState('');
+  const [fundOperation, setFundOperation] = useState<'add' | 'subtract'>('add');
   const [selectedCrypto, setSelectedCrypto] = useState('BTC');
   const [cryptoAmount, setCryptoAmount] = useState('');
   const [transferFee, setTransferFee] = useState('');
-  const [cryptoFee, setCryptoFee] = useState('');
+  const [cryptoFeeAmounts, setCryptoFeeAmounts] = useState<Record<string, string>>({});
 
   // Fetch all users
   const { data: users, isLoading: usersLoading } = useQuery({
@@ -75,6 +81,34 @@ const AdminDashboard = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_settings')
+        .select('*');
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: isAdmin,
+  });
+
+  // Fetch crypto fee settings
+  const { data: cryptoFeeSettings } = useQuery({
+    queryKey: ['crypto-fee-settings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('crypto_fee_settings')
+        .select('*');
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: isAdmin,
+  });
+
+  // Fetch deposit addresses
+  const { data: depositAddresses } = useQuery({
+    queryKey: ['deposit-addresses'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('deposit_addresses')
         .select('*');
       
       if (error) throw error;
@@ -183,9 +217,9 @@ const AdminDashboard = () => {
     },
   });
 
-  // Fund account mutation
+  // Fund account mutation (add or subtract)
   const fundAccountMutation = useMutation({
-    mutationFn: async ({ userId, amount, description }: { userId: string; amount: number; description: string }) => {
+    mutationFn: async ({ userId, amount, description, operation }: { userId: string; amount: number; description: string; operation: 'add' | 'subtract' }) => {
       const { data: profile } = await supabase
         .from('profiles')
         .select('balance, full_name')
@@ -194,7 +228,11 @@ const AdminDashboard = () => {
 
       if (!profile) throw new Error('User not found');
 
-      const newBalance = (profile.balance || 0) + amount;
+      const newBalance = operation === 'add' 
+        ? (profile.balance || 0) + amount 
+        : (profile.balance || 0) - amount;
+
+      if (newBalance < 0) throw new Error('Insufficient balance for this operation');
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -207,9 +245,9 @@ const AdminDashboard = () => {
         .from('transaction_history')
         .insert({
           user_id: userId,
-          transaction_type: 'credit',
+          transaction_type: operation === 'add' ? 'credit' : 'debit',
           amount: amount,
-          description: description || 'Account Funded by Admin',
+          description: description || (operation === 'add' ? 'Account Funded by Admin' : 'Funds Deducted by Admin'),
           status: 'completed'
         });
 
@@ -218,17 +256,18 @@ const AdminDashboard = () => {
       await supabase.from('admin_logs').insert({
         admin_id: user!.id,
         target_user_id: userId,
-        action_type: 'fund_account',
-        details: { amount, description }
+        action_type: operation === 'add' ? 'fund_account' : 'deduct_funds',
+        details: { amount, description, operation }
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast({ title: 'Success', description: 'Account funded successfully' });
+      toast({ title: 'Success', description: 'Account updated successfully' });
       setFundAccountOpen(false);
       setSelectedUser(null);
       setFundAmount('');
       setFundDescription('');
+      setFundOperation('add');
     },
     onError: (error: any) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -325,6 +364,43 @@ const AdminDashboard = () => {
     },
   });
 
+  // Approve transfer mutation
+  const approveTransferMutation = useMutation({
+    mutationFn: async ({ transferId, userId }: { transferId: string; userId: string }) => {
+      // Update transfer status to completed
+      const { error: transferError } = await supabase
+        .from('transfers')
+        .update({ status: 'completed' })
+        .eq('id', transferId);
+      
+      if (transferError) throw transferError;
+
+      // Update transaction history for this user
+      const { error: historyError } = await supabase
+        .from('transaction_history')
+        .update({ status: 'completed' })
+        .eq('user_id', userId)
+        .eq('status', 'pending');
+
+      if (historyError) console.error('History update error:', historyError);
+
+      await supabase.from('admin_logs').insert({
+        admin_id: user!.id,
+        target_user_id: userId,
+        action_type: 'approve_transfer',
+        details: { transfer_id: transferId }
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['user-transactions'] });
+      toast({ title: 'Success', description: 'Transfer approved and marked as completed' });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
   // Update transfer fee mutation
   const updateTransferFeeMutation = useMutation({
     mutationFn: async (fee: string) => {
@@ -356,31 +432,65 @@ const AdminDashboard = () => {
     },
   });
 
-  // Update crypto fee mutation
+  // Update/Create crypto fee mutation
   const updateCryptoFeeMutation = useMutation({
-    mutationFn: async (fee: string) => {
+    mutationFn: async ({ coinSymbol, coinName, feeAmount }: { coinSymbol: string; coinName: string; feeAmount: number }) => {
       const { data: existing } = await supabase
-        .from('app_settings')
+        .from('crypto_fee_settings')
         .select('*')
-        .eq('setting_key', 'crypto_fee')
+        .eq('coin_symbol', coinSymbol)
         .maybeSingle();
 
       if (existing) {
         const { error } = await supabase
-          .from('app_settings')
-          .update({ setting_value: fee })
-          .eq('setting_key', 'crypto_fee');
+          .from('crypto_fee_settings')
+          .update({ fee_amount: feeAmount })
+          .eq('coin_symbol', coinSymbol);
         if (error) throw error;
       } else {
         const { error } = await supabase
-          .from('app_settings')
-          .insert({ setting_key: 'crypto_fee', setting_value: fee });
+          .from('crypto_fee_settings')
+          .insert({ coin_symbol: coinSymbol, coin_name: coinName, fee_amount: feeAmount });
         if (error) throw error;
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['app-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['crypto-fee-settings'] });
       toast({ title: 'Success', description: 'Crypto fee updated' });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Update/Create deposit address mutation
+  const updateDepositAddressMutation = useMutation({
+    mutationFn: async ({ coinSymbol, coinName, network, walletAddress }: { coinSymbol: string; coinName: string; network: string; walletAddress: string }) => {
+      const { data: existing } = await supabase
+        .from('deposit_addresses')
+        .select('*')
+        .eq('coin_symbol', coinSymbol)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('deposit_addresses')
+          .update({ wallet_address: walletAddress })
+          .eq('coin_symbol', coinSymbol);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('deposit_addresses')
+          .insert({ coin_symbol: coinSymbol, coin_name: coinName, network, wallet_address: walletAddress });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deposit-addresses'] });
+      toast({ title: 'Success', description: 'Deposit address updated' });
+      setWalletEditOpen(false);
+      setSelectedWalletCoin(null);
+      setNewWalletAddress('');
     },
     onError: (error: any) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -418,7 +528,6 @@ const AdminDashboard = () => {
   const totalTransfers = (transfers?.length || 0) + (internalTransfers?.length || 0);
   const pendingTransfers = transfers?.filter(t => t.status === 'pending') || [];
   const currentTransferFee = settings?.find(s => s.setting_key === 'transfer_fee')?.setting_value || '25';
-  const currentCryptoFee = settings?.find(s => s.setting_key === 'crypto_fee')?.setting_value || '0';
 
   const handleEditBalance = (user: any) => {
     setSelectedUser(user);
@@ -431,6 +540,7 @@ const AdminDashboard = () => {
     setSelectedUser(user);
     setFundAmount('');
     setFundDescription('');
+    setFundOperation('add');
     setFundAccountOpen(true);
   };
 
@@ -456,6 +566,7 @@ const AdminDashboard = () => {
       userId: selectedUser.user_id,
       amount: parseFloat(fundAmount),
       description: fundDescription,
+      operation: fundOperation,
     });
   };
 
@@ -465,6 +576,23 @@ const AdminDashboard = () => {
       userId: selectedUser.user_id,
       coinSymbol: selectedCrypto,
       amount: parseFloat(cryptoAmount),
+    });
+  };
+
+  const handleEditWalletAddress = (coin: typeof CRYPTO_COINS[0]) => {
+    setSelectedWalletCoin(coin);
+    const existing = depositAddresses?.find(d => d.coin_symbol === coin.symbol);
+    setNewWalletAddress(existing?.wallet_address || '');
+    setWalletEditOpen(true);
+  };
+
+  const handleSaveWalletAddress = () => {
+    if (!selectedWalletCoin || !newWalletAddress) return;
+    updateDepositAddressMutation.mutate({
+      coinSymbol: selectedWalletCoin.symbol,
+      coinName: selectedWalletCoin.name,
+      network: selectedWalletCoin.network,
+      walletAddress: newWalletAddress,
     });
   };
 
@@ -483,6 +611,11 @@ const AdminDashboard = () => {
   const handleLogout = async () => {
     await signOut();
     navigate('/');
+  };
+
+  const getUserName = (userId: string) => {
+    const u = users?.find(u => u.user_id === userId);
+    return u?.full_name || u?.email || userId.slice(0, 8);
   };
 
   const renderContent = () => {
@@ -536,10 +669,10 @@ const AdminDashboard = () => {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Total Withdrawals</p>
-                      <p className="text-3xl font-bold">{totalTransfers}</p>
+                      <p className="text-sm text-muted-foreground">Pending Transfers</p>
+                      <p className="text-3xl font-bold">{pendingTransfers.length}</p>
                     </div>
-                    <ArrowUpDown className="h-8 w-8 text-blue-500 opacity-80" />
+                    <ArrowUpDown className="h-8 w-8 text-orange-500 opacity-80" />
                   </div>
                 </CardContent>
               </Card>
@@ -653,7 +786,7 @@ const AdminDashboard = () => {
           <div className="space-y-6">
             <div>
               <h1 className="text-3xl font-bold text-foreground">Edit Balances</h1>
-              <p className="text-muted-foreground">Manage user account balances</p>
+              <p className="text-muted-foreground">Add or subtract funds from user accounts</p>
             </div>
             
             <div className="flex items-center gap-4">
@@ -761,36 +894,44 @@ const AdminDashboard = () => {
         return (
           <div className="space-y-6">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Wallet Addresses</h1>
-              <p className="text-muted-foreground">View all user crypto wallets</p>
+              <h1 className="text-3xl font-bold text-foreground">Deposit Wallet Addresses</h1>
+              <p className="text-muted-foreground">Manage website deposit addresses that users see</p>
             </div>
             
             <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User ID</TableHead>
-                      <TableHead>Coin</TableHead>
-                      <TableHead>Network</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead>Balance</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {cryptoWallets?.map((wallet) => (
-                      <TableRow key={wallet.id}>
-                        <TableCell className="font-mono text-xs">{wallet.user_id.slice(0, 8)}...</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{wallet.coin_symbol}</Badge>
-                        </TableCell>
-                        <TableCell>{wallet.network}</TableCell>
-                        <TableCell className="font-mono text-xs">{wallet.wallet_address.slice(0, 16)}...</TableCell>
-                        <TableCell>{wallet.balance || 0} {wallet.coin_symbol}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <CardHeader>
+                <CardTitle>Configure Deposit Addresses</CardTitle>
+                <CardDescription>Set wallet addresses for each cryptocurrency. Users will see these when making deposits.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4">
+                  {CRYPTO_COINS.map((coin) => {
+                    const existingAddress = depositAddresses?.find(d => d.coin_symbol === coin.symbol);
+                    return (
+                      <div key={coin.symbol} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Badge variant="outline" className="text-base px-3 py-1">{coin.symbol}</Badge>
+                          <div>
+                            <p className="font-medium">{coin.name}</p>
+                            <p className="text-sm text-muted-foreground">{coin.network}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          {existingAddress ? (
+                            <code className="text-xs bg-muted px-2 py-1 rounded max-w-xs truncate">
+                              {existingAddress.wallet_address}
+                            </code>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Not configured</span>
+                          )}
+                          <Button size="sm" variant="outline" onClick={() => handleEditWalletAddress(coin)}>
+                            <Edit className="h-4 w-4 mr-1" /> Edit
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -801,7 +942,7 @@ const AdminDashboard = () => {
           <div className="space-y-6">
             <div>
               <h1 className="text-3xl font-bold text-foreground">Pending Transfers</h1>
-              <p className="text-muted-foreground">Review and manage pending transfers</p>
+              <p className="text-muted-foreground">Review and approve pending transfers</p>
             </div>
             
             <Card>
@@ -810,28 +951,43 @@ const AdminDashboard = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
+                      <TableHead>User</TableHead>
                       <TableHead>Recipient</TableHead>
                       <TableHead>Bank</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pendingTransfers?.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                           No pending transfers
                         </TableCell>
                       </TableRow>
                     ) : (
                       pendingTransfers?.map((transfer) => (
                         <TableRow key={transfer.id}>
-                          <TableCell>{format(new Date(transfer.created_at), 'MMM dd, yyyy')}</TableCell>
+                          <TableCell>{format(new Date(transfer.created_at), 'MMM dd, yyyy HH:mm')}</TableCell>
+                          <TableCell>{getUserName(transfer.user_id)}</TableCell>
                           <TableCell>{transfer.recipient_name}</TableCell>
                           <TableCell>{transfer.recipient_bank}</TableCell>
                           <TableCell>${transfer.amount.toLocaleString()}</TableCell>
                           <TableCell>
                             <Badge variant="secondary">{transfer.status}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button 
+                              size="sm" 
+                              onClick={() => approveTransferMutation.mutate({ 
+                                transferId: transfer.id, 
+                                userId: transfer.user_id 
+                              })}
+                              disabled={approveTransferMutation.isPending}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -848,36 +1004,53 @@ const AdminDashboard = () => {
           <div className="space-y-6">
             <div>
               <h1 className="text-3xl font-bold text-foreground">Crypto Fees</h1>
-              <p className="text-muted-foreground">Manage cryptocurrency transfer fees</p>
+              <p className="text-muted-foreground">Set fees for each cryptocurrency</p>
             </div>
             
             <Card>
               <CardHeader>
-                <CardTitle>Crypto Transfer Fee</CardTitle>
-                <CardDescription>Set the fee for cryptocurrency transfers</CardDescription>
+                <CardTitle>Crypto Transfer Fees</CardTitle>
+                <CardDescription>Configure fees for each cryptocurrency. Users can choose to pay with any of these coins.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 max-w-xs">
-                    <Label>Current Crypto Fee ($)</Label>
-                    <Input
-                      type="number"
-                      value={cryptoFee || currentCryptoFee}
-                      onChange={(e) => setCryptoFee(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                  <Button 
-                    className="mt-6"
-                    onClick={() => updateCryptoFeeMutation.mutate(cryptoFee || currentCryptoFee)}
-                    disabled={updateCryptoFeeMutation.isPending}
-                  >
-                    Update Fee
-                  </Button>
+              <CardContent>
+                <div className="grid gap-4">
+                  {CRYPTO_COINS.map((coin) => {
+                    const existingFee = cryptoFeeSettings?.find(f => f.coin_symbol === coin.symbol);
+                    const currentValue = cryptoFeeAmounts[coin.symbol] ?? (existingFee?.fee_amount?.toString() || '0');
+                    return (
+                      <div key={coin.symbol} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Badge variant="outline" className="text-base px-3 py-1">{coin.symbol}</Badge>
+                          <div>
+                            <p className="font-medium">{coin.name}</p>
+                            <p className="text-sm text-muted-foreground">Current fee: {existingFee?.fee_amount || 0} {coin.symbol}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            step="0.0001"
+                            placeholder="0"
+                            className="w-32"
+                            value={currentValue}
+                            onChange={(e) => setCryptoFeeAmounts(prev => ({ ...prev, [coin.symbol]: e.target.value }))}
+                          />
+                          <Button 
+                            size="sm"
+                            onClick={() => updateCryptoFeeMutation.mutate({
+                              coinSymbol: coin.symbol,
+                              coinName: coin.name,
+                              feeAmount: parseFloat(cryptoFeeAmounts[coin.symbol] || '0')
+                            })}
+                            disabled={updateCryptoFeeMutation.isPending}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Current fee: ${currentCryptoFee}
-                </p>
               </CardContent>
             </Card>
           </div>
@@ -894,7 +1067,7 @@ const AdminDashboard = () => {
             <Card>
               <CardHeader>
                 <CardTitle>Bank Transfer Fee</CardTitle>
-                <CardDescription>Set the fee for bank transfers</CardDescription>
+                <CardDescription>Set the fee for bank transfers (local and international)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-4">
@@ -928,54 +1101,20 @@ const AdminDashboard = () => {
           <div className="space-y-6">
             <div>
               <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-              <p className="text-muted-foreground">Platform settings and configuration</p>
+              <p className="text-muted-foreground">Platform configuration</p>
             </div>
             
-            <div className="grid gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Transfer Fees</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Bank Transfer Fee ($)</Label>
-                      <p className="text-2xl font-bold">${currentTransferFee}</p>
-                    </div>
-                    <div>
-                      <Label>Crypto Transfer Fee ($)</Label>
-                      <p className="text-2xl font-bold">${currentCryptoFee}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Platform Statistics</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <Label>Total Users</Label>
-                      <p className="text-2xl font-bold">{totalUsers}</p>
-                    </div>
-                    <div>
-                      <Label>Active Users</Label>
-                      <p className="text-2xl font-bold">{activeUsers}</p>
-                    </div>
-                    <div>
-                      <Label>Total Deposits</Label>
-                      <p className="text-2xl font-bold">${totalBalance.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <Label>Total Transfers</Label>
-                      <p className="text-2xl font-bold">{totalTransfers}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Admin Information</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <p><strong>Admin Email:</strong> {user?.email}</p>
+                  <p><strong>Admin ID:</strong> {user?.id}</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         );
 
@@ -987,16 +1126,11 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-background flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-card border-r border-border flex flex-col min-h-screen">
+      <aside className="w-64 bg-card border-r border-border flex flex-col">
         <div className="p-6 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-foreground">Admin Panel</h2>
-              <p className="text-xs text-muted-foreground">Management Console</p>
-            </div>
+          <div className="flex items-center gap-2">
+            <Shield className="h-6 w-6 text-primary" />
+            <h1 className="text-xl font-bold text-foreground">Admin Panel</h1>
           </div>
         </div>
         
@@ -1005,26 +1139,26 @@ const AdminDashboard = () => {
             <button
               key={item.id}
               onClick={() => setActiveSection(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                 activeSection === item.id
                   ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               <item.icon className="h-5 w-5" />
-              {item.label}
+              <span>{item.label}</span>
+              {item.id === 'pending-transfers' && pendingTransfers.length > 0 && (
+                <Badge variant="destructive" className="ml-auto">{pendingTransfers.length}</Badge>
+              )}
             </button>
           ))}
         </nav>
 
         <div className="p-4 border-t border-border">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors"
-          >
-            <LogOut className="h-5 w-5" />
+          <Button variant="outline" className="w-full" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-2" />
             Logout
-          </button>
+          </Button>
         </div>
       </aside>
 
@@ -1037,7 +1171,7 @@ const AdminDashboard = () => {
       <Dialog open={editBalanceOpen} onOpenChange={setEditBalanceOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Balance</DialogTitle>
+            <DialogTitle>Edit User Balance</DialogTitle>
             <DialogDescription>
               Update balance for {selectedUser?.full_name || selectedUser?.email}
             </DialogDescription>
@@ -1063,7 +1197,7 @@ const AdminDashboard = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditBalanceOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveBalance} disabled={updateBalanceMutation.isPending}>
-              Save
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1073,34 +1207,62 @@ const AdminDashboard = () => {
       <Dialog open={fundAccountOpen} onOpenChange={setFundAccountOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Fund Account</DialogTitle>
+            <DialogTitle>Fund/Deduct Account</DialogTitle>
             <DialogDescription>
-              Add funds to {selectedUser?.full_name || selectedUser?.email}'s account
+              Add or subtract funds for {selectedUser?.full_name || selectedUser?.email}
+              <br />
+              <span className="text-foreground">Current Balance: ${(selectedUser?.balance || 0).toLocaleString()}</span>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>Operation</Label>
+              <Select value={fundOperation} onValueChange={(v: 'add' | 'subtract') => setFundOperation(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add">
+                    <div className="flex items-center gap-2">
+                      <Plus className="h-4 w-4 text-green-500" />
+                      Add Funds
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="subtract">
+                    <div className="flex items-center gap-2">
+                      <Minus className="h-4 w-4 text-red-500" />
+                      Subtract Funds
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <Label>Amount ($)</Label>
               <Input
                 type="number"
                 value={fundAmount}
                 onChange={(e) => setFundAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder="Enter amount"
               />
             </div>
             <div>
-              <Label>Description (optional)</Label>
+              <Label>Description (Optional)</Label>
               <Input
                 value={fundDescription}
                 onChange={(e) => setFundDescription(e.target.value)}
-                placeholder="Account Funded by Admin"
+                placeholder="Reason for funding"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFundAccountOpen(false)}>Cancel</Button>
-            <Button onClick={handleFundSubmit} disabled={fundAccountMutation.isPending}>
-              Fund Account
+            <Button 
+              onClick={handleFundSubmit} 
+              disabled={fundAccountMutation.isPending}
+              variant={fundOperation === 'subtract' ? 'destructive' : 'default'}
+            >
+              {fundOperation === 'add' ? 'Add Funds' : 'Deduct Funds'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1112,12 +1274,12 @@ const AdminDashboard = () => {
           <DialogHeader>
             <DialogTitle>Fund Crypto Wallet</DialogTitle>
             <DialogDescription>
-              Add crypto to {selectedUser?.full_name || selectedUser?.email}'s wallet
+              Add cryptocurrency for {selectedUser?.full_name || selectedUser?.email}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Select Cryptocurrency</Label>
+              <Label>Cryptocurrency</Label>
               <Select value={selectedCrypto} onValueChange={setSelectedCrypto}>
                 <SelectTrigger>
                   <SelectValue />
@@ -1135,9 +1297,10 @@ const AdminDashboard = () => {
               <Label>Amount</Label>
               <Input
                 type="number"
+                step="0.0001"
                 value={cryptoAmount}
                 onChange={(e) => setCryptoAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder="Enter amount"
               />
             </div>
           </div>
@@ -1150,182 +1313,157 @@ const AdminDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Wallet Address Dialog */}
+      <Dialog open={walletEditOpen} onOpenChange={setWalletEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Deposit Address</DialogTitle>
+            <DialogDescription>
+              Set the deposit address for {selectedWalletCoin?.name} ({selectedWalletCoin?.symbol})
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Wallet Address</Label>
+              <Input
+                value={newWalletAddress}
+                onChange={(e) => setNewWalletAddress(e.target.value)}
+                placeholder="Enter wallet address"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWalletEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveWalletAddress} disabled={updateDepositAddressMutation.isPending}>
+              Save Address
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* User Details Dialog */}
       <Dialog open={userDetailsOpen} onOpenChange={setUserDetailsOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-w-3xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              User Details
+            <DialogTitle className="flex items-center justify-between">
+              <span>User Details: {selectedUser?.full_name || 'N/A'}</span>
             </DialogTitle>
-            <DialogDescription>
-              Complete profile and transaction history for {selectedUser?.full_name || selectedUser?.email}
-            </DialogDescription>
           </DialogHeader>
           
           {selectedUser && (
             <div className="space-y-6">
-              {/* User Info Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Full Name</p>
-                    <p className="font-semibold">{selectedUser.full_name || 'N/A'}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Email</p>
-                    <p className="font-semibold text-sm">{selectedUser.email || 'N/A'}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Account Number</p>
-                    <p className="font-semibold">{selectedUser.account_number || 'N/A'}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Status</p>
-                    <Badge variant={selectedUser.is_blocked ? 'destructive' : 'default'}>
-                      {selectedUser.is_blocked ? 'Blocked' : 'Active'}
-                    </Badge>
-                  </CardContent>
-                </Card>
+              {/* User Info */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                <div>
+                  <p className="text-sm text-muted-foreground">Email</p>
+                  <p className="font-medium">{selectedUser.email || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Account Number</p>
+                  <p className="font-medium font-mono">{selectedUser.account_number || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <Badge variant={selectedUser.is_blocked ? 'destructive' : 'default'}>
+                    {selectedUser.is_blocked ? 'Blocked' : 'Active'}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Joined</p>
+                  <p className="font-medium">{format(new Date(selectedUser.created_at), 'MMM dd, yyyy')}</p>
+                </div>
               </div>
 
               {/* Balances */}
               <div className="grid grid-cols-2 gap-4">
-                <Card className="bg-primary/5 border-primary/20">
+                <Card>
                   <CardContent className="pt-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Main Balance</p>
-                        <p className="text-2xl font-bold text-primary">${(selectedUser.balance || 0).toLocaleString()}</p>
-                      </div>
-                      <DollarSign className="h-8 w-8 text-primary opacity-50" />
-                    </div>
+                    <p className="text-sm text-muted-foreground">Main Balance</p>
+                    <p className="text-2xl font-bold">${(selectedUser.balance || 0).toLocaleString()}</p>
                   </CardContent>
                 </Card>
-                <Card className="bg-purple-500/5 border-purple-500/20">
+                <Card>
                   <CardContent className="pt-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Savings Balance</p>
-                        <p className="text-2xl font-bold text-purple-500">${(selectedUser.savings_balance || 0).toLocaleString()}</p>
-                      </div>
-                      <CreditCard className="h-8 w-8 text-purple-500 opacity-50" />
-                    </div>
+                    <p className="text-sm text-muted-foreground">Savings Balance</p>
+                    <p className="text-2xl font-bold">${(selectedUser.savings_balance || 0).toLocaleString()}</p>
                   </CardContent>
                 </Card>
               </div>
 
               {/* Transaction History */}
               <div>
-                <h3 className="text-lg font-semibold mb-3">Transaction History</h3>
-                <Card>
-                  <ScrollArea className="h-[300px]">
-                    <Table>
-                      <TableHeader>
+                <h3 className="font-semibold mb-3">Transaction History</h3>
+                <ScrollArea className="h-64 border rounded-lg">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {userTransactions?.length === 0 ? (
                         <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Amount</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
+                            No transactions found
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {userTransactions?.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                              No transactions found
+                      ) : (
+                        userTransactions?.map((tx) => (
+                          <TableRow key={tx.id}>
+                            <TableCell>{format(new Date(tx.created_at), 'MMM dd, HH:mm')}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {tx.transaction_type.replace(/_/g, ' ')}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-32 truncate">{tx.description || '-'}</TableCell>
+                            <TableCell>
+                              {tx.crypto_amount ? (
+                                <span>{tx.crypto_amount} {tx.crypto_symbol}</span>
+                              ) : (
+                                <span className={tx.transaction_type.includes('out') || tx.transaction_type === 'debit' ? 'text-red-500' : 'text-green-500'}>
+                                  {tx.transaction_type.includes('out') || tx.transaction_type === 'debit' ? '-' : '+'}${tx.amount?.toLocaleString()}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={tx.status === 'completed' ? 'default' : 'secondary'}>
+                                {tx.status}
+                              </Badge>
                             </TableCell>
                           </TableRow>
-                        ) : (
-                          userTransactions?.map((tx) => (
-                            <TableRow key={tx.id}>
-                              <TableCell className="text-sm">
-                                {format(new Date(tx.created_at), 'MMM dd, yyyy HH:mm')}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  {tx.transaction_type === 'credit' || tx.transaction_type === 'crypto_credit' ? (
-                                    <ArrowDownCircle className="h-4 w-4 text-green-500" />
-                                  ) : (
-                                    <ArrowUpCircle className="h-4 w-4 text-red-500" />
-                                  )}
-                                  <span className="capitalize text-sm">{tx.transaction_type.replace('_', ' ')}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-sm">{tx.description || 'N/A'}</TableCell>
-                              <TableCell>
-                                {tx.crypto_amount ? (
-                                  <span className="font-medium">{tx.crypto_amount} {tx.crypto_symbol}</span>
-                                ) : (
-                                  <span className={`font-medium ${tx.transaction_type === 'credit' ? 'text-green-500' : 'text-red-500'}`}>
-                                    {tx.transaction_type === 'credit' ? '+' : '-'}${tx.amount.toLocaleString()}
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={tx.status === 'completed' ? 'default' : 'secondary'}>
-                                  {tx.status}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                </Card>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
               </div>
 
               {/* Quick Actions */}
-              <div className="flex gap-2 pt-2">
-                <Button 
-                  onClick={() => {
-                    setUserDetailsOpen(false);
-                    handleFundAccount(selectedUser);
-                  }}
-                >
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" onClick={() => { setUserDetailsOpen(false); handleFundAccount(selectedUser); }}>
                   <Plus className="h-4 w-4 mr-1" /> Fund Account
                 </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    setUserDetailsOpen(false);
-                    handleEditBalance(selectedUser);
-                  }}
-                >
+                <Button size="sm" variant="outline" onClick={() => { setUserDetailsOpen(false); handleEditBalance(selectedUser); }}>
                   <Edit className="h-4 w-4 mr-1" /> Edit Balance
                 </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    setUserDetailsOpen(false);
-                    handleFundCrypto(selectedUser);
-                  }}
-                >
+                <Button size="sm" variant="outline" onClick={() => { setUserDetailsOpen(false); handleFundCrypto(selectedUser); }}>
                   <Bitcoin className="h-4 w-4 mr-1" /> Fund Crypto
                 </Button>
-                <Button
+                <Button 
+                  size="sm" 
                   variant={selectedUser.is_blocked ? 'default' : 'destructive'}
                   onClick={() => {
-                    toggleBlockMutation.mutate({ 
-                      userId: selectedUser.user_id, 
-                      isBlocked: !selectedUser.is_blocked 
-                    });
+                    toggleBlockMutation.mutate({ userId: selectedUser.user_id, isBlocked: !selectedUser.is_blocked });
                     setUserDetailsOpen(false);
                   }}
                 >
-                  {selectedUser.is_blocked ? (
-                    <><CheckCircle className="h-4 w-4 mr-1" /> Unblock</>
-                  ) : (
-                    <><Ban className="h-4 w-4 mr-1" /> Block</>
-                  )}
+                  {selectedUser.is_blocked ? <CheckCircle className="h-4 w-4 mr-1" /> : <Ban className="h-4 w-4 mr-1" />}
+                  {selectedUser.is_blocked ? 'Unblock' : 'Block'}
                 </Button>
               </div>
             </div>
