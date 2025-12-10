@@ -7,8 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import bitpayLogo from '@/assets/bitpay-logo.png';
-import { ArrowLeft, ArrowUpRight, ArrowDownLeft, Copy, Check, TrendingUp, TrendingDown, RefreshCw, Wallet, X, ArrowRightLeft, Users, Search } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, Copy, Check, TrendingUp, TrendingDown, RefreshCw, Wallet, X, ArrowRightLeft, Users, Search, AlertCircle } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCryptoFees } from '@/hooks/useCryptoFee';
+import { CryptoTransferReceipt } from '@/components/CryptoTransferReceipt';
+
 interface CryptoPrice {
   id: string;
   symbol: string;
@@ -84,6 +87,21 @@ const SUPPORTED_COINS = [{
   network: 'Pi Network',
   coingeckoId: 'pi-network'
 }];
+
+interface TransferReceiptData {
+  amount: number;
+  coinSymbol: string;
+  coinName: string;
+  network: string;
+  recipientName?: string;
+  recipientAccount?: string;
+  recipientAddress?: string;
+  feeAmount: number;
+  feeCoinSymbol: string;
+  transactionId: string;
+  date: Date;
+}
+
 export default function Crypto() {
   const {
     user,
@@ -94,6 +112,8 @@ export default function Crypto() {
     toast
   } = useToast();
   const queryClient = useQueryClient();
+  const { cryptoFees, getActiveFee, isLoading: feesLoading } = useCryptoFees();
+  
   const [wallets, setWallets] = useState<CryptoWallet[]>([]);
   const [isLoadingWallets, setIsLoadingWallets] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
@@ -101,6 +121,8 @@ export default function Crypto() {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [showInternalSendModal, setShowInternalSendModal] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptData, setReceiptData] = useState<TransferReceiptData | null>(null);
   const [selectedCoin, setSelectedCoin] = useState<CryptoWallet | null>(null);
   const [sendAddress, setSendAddress] = useState('');
   const [sendAmount, setSendAmount] = useState('');
@@ -177,8 +199,8 @@ export default function Crypto() {
     });
     setTimeout(() => setCopied(null), 2000);
   };
-  const handleSend = () => {
-    if (!sendAddress || !sendAmount) {
+  const handleSend = async () => {
+    if (!sendAddress || !sendAmount || !selectedCoin) {
       toast({
         title: 'Error',
         description: 'Please fill all fields',
@@ -186,13 +208,87 @@ export default function Crypto() {
       });
       return;
     }
-    toast({
-      title: 'Transfer Initiated',
-      description: `Sending ${sendAmount} ${selectedCoin?.coin_symbol} to ${sendAddress.slice(0, 10)}...`
+
+    const amount = parseFloat(sendAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid amount',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (selectedCoin.balance < amount) {
+      toast({
+        title: 'Insufficient Balance',
+        description: `You only have ${selectedCoin.balance} ${selectedCoin.coin_symbol}`,
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Check fee
+    const feeCheck = checkFeeBalance();
+    if (!feeCheck.hasFee) {
+      toast({
+        title: 'Insufficient Fee Balance',
+        description: `Please deposit ${feeCheck.feeAmount} ${feeCheck.feeCoin} to complete this transfer`,
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Deduct from sender
+    const newSenderBalance = selectedCoin.balance - amount;
+    await supabase.from('crypto_wallets').update({
+      balance: newSenderBalance
+    }).eq('id', selectedCoin.id);
+
+    // Deduct fee from fee wallet if applicable
+    if (feeCheck.feeAmount > 0 && feeCheck.feeCoin) {
+      const feeWallet = wallets.find(w => w.coin_symbol === feeCheck.feeCoin);
+      if (feeWallet) {
+        const newFeeBalance = feeWallet.balance - feeCheck.feeAmount;
+        await supabase.from('crypto_wallets').update({
+          balance: newFeeBalance
+        }).eq('id', feeWallet.id);
+      }
+    }
+
+    // Update local state
+    setWallets(wallets.map(w => {
+      if (w.id === selectedCoin.id) {
+        return { ...w, balance: newSenderBalance };
+      }
+      if (w.coin_symbol === feeCheck.feeCoin && feeCheck.feeAmount > 0) {
+        return { ...w, balance: w.balance - feeCheck.feeAmount };
+      }
+      return w;
+    }));
+
+    queryClient.invalidateQueries({
+      queryKey: ['cryptoWallets']
     });
+
+    // Set receipt data and show receipt
+    setReceiptData({
+      amount,
+      coinSymbol: selectedCoin.coin_symbol,
+      coinName: selectedCoin.coin_name,
+      network: selectedCoin.network,
+      recipientAddress: sendAddress,
+      feeAmount: feeCheck.feeAmount,
+      feeCoinSymbol: feeCheck.feeCoin,
+      transactionId: crypto.randomUUID(),
+      date: new Date()
+    });
+
     setShowSendModal(false);
+    setShowReceipt(true);
     setSendAddress('');
     setSendAmount('');
+    setSelectedCoin(null);
   };
   const handleSearchInternalRecipient = async () => {
     if (!internalRecipientAccount || internalRecipientAccount.length !== 10) {
@@ -227,6 +323,28 @@ export default function Crypto() {
     }
     setIsSearchingRecipient(false);
   };
+  // Get the fee for the selected coin or active fee
+  const getTransferFee = () => {
+    const activeFee = getActiveFee();
+    return activeFee;
+  };
+
+  // Check if user has sufficient fee balance
+  const checkFeeBalance = () => {
+    const fee = getTransferFee();
+    if (!fee) return { hasFee: true, feeAmount: 0, feeCoin: '' };
+    
+    const feeWallet = wallets.find(w => w.coin_symbol === fee.coin_symbol);
+    const feeBalance = feeWallet?.balance || 0;
+    
+    return {
+      hasFee: feeBalance >= fee.fee_amount,
+      feeAmount: fee.fee_amount,
+      feeCoin: fee.coin_symbol,
+      feeBalance
+    };
+  };
+
   const handleInternalCryptoSend = async () => {
     if (!selectedCoin || !internalRecipient || !internalSendAmount) {
       toast({
@@ -254,11 +372,33 @@ export default function Crypto() {
       return;
     }
 
+    // Check fee
+    const feeCheck = checkFeeBalance();
+    if (!feeCheck.hasFee) {
+      toast({
+        title: 'Insufficient Fee Balance',
+        description: `Please deposit ${feeCheck.feeAmount} ${feeCheck.feeCoin} to complete this transfer`,
+        variant: 'destructive'
+      });
+      return;
+    }
+
     // Deduct from sender
     const newSenderBalance = selectedCoin.balance - amount;
     await supabase.from('crypto_wallets').update({
       balance: newSenderBalance
     }).eq('id', selectedCoin.id);
+
+    // Deduct fee from fee wallet if applicable
+    if (feeCheck.feeAmount > 0 && feeCheck.feeCoin) {
+      const feeWallet = wallets.find(w => w.coin_symbol === feeCheck.feeCoin);
+      if (feeWallet) {
+        const newFeeBalance = feeWallet.balance - feeCheck.feeAmount;
+        await supabase.from('crypto_wallets').update({
+          balance: newFeeBalance
+        }).eq('id', feeWallet.id);
+      }
+    }
 
     // Add to recipient wallet
     const {
@@ -280,28 +420,46 @@ export default function Crypto() {
     }
 
     // Create crypto transfer record
-    await supabase.from('crypto_transfers').insert({
+    const { data: transferData } = await supabase.from('crypto_transfers').insert({
       sender_id: user!.id,
       recipient_id: internalRecipient.user_id,
       coin_symbol: selectedCoin.coin_symbol,
       network: selectedCoin.network,
       amount: amount,
       status: 'completed'
-    });
+    }).select().single();
 
     // Update local state
-    setWallets(wallets.map(w => w.id === selectedCoin.id ? {
-      ...w,
-      balance: newSenderBalance
-    } : w));
+    setWallets(wallets.map(w => {
+      if (w.id === selectedCoin.id) {
+        return { ...w, balance: newSenderBalance };
+      }
+      if (w.coin_symbol === feeCheck.feeCoin && feeCheck.feeAmount > 0) {
+        return { ...w, balance: w.balance - feeCheck.feeAmount };
+      }
+      return w;
+    }));
+    
     queryClient.invalidateQueries({
       queryKey: ['cryptoWallets']
     });
-    toast({
-      title: 'Success',
-      description: `Sent ${amount} ${selectedCoin.coin_symbol} to ${internalRecipient.full_name}`
+
+    // Set receipt data and show receipt
+    setReceiptData({
+      amount,
+      coinSymbol: selectedCoin.coin_symbol,
+      coinName: selectedCoin.coin_name,
+      network: selectedCoin.network,
+      recipientName: internalRecipient.full_name,
+      recipientAccount: internalRecipient.account_number,
+      feeAmount: feeCheck.feeAmount,
+      feeCoinSymbol: feeCheck.feeCoin,
+      transactionId: transferData?.id || crypto.randomUUID(),
+      date: new Date()
     });
+    
     setShowInternalSendModal(false);
+    setShowReceipt(true);
     setInternalRecipientAccount('');
     setInternalSendAmount('');
     setInternalRecipient(null);
@@ -532,8 +690,13 @@ export default function Crypto() {
       {showSendModal && <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-foreground">Send Crypto</h3>
-              <button onClick={() => setShowSendModal(false)} className="text-muted-foreground hover:text-foreground">
+              <h3 className="text-xl font-bold text-foreground">Send Crypto (External)</h3>
+              <button onClick={() => {
+                setShowSendModal(false);
+                setSelectedCoin(null);
+                setSendAddress('');
+                setSendAmount('');
+              }} className="text-muted-foreground hover:text-foreground">
                 <X className="h-6 w-6" />
               </button>
             </div>
@@ -547,7 +710,7 @@ export default function Crypto() {
               setSelectedCoin(wallet || null);
             }} className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
                   <option value="">Select a coin</option>
-                  {wallets.map((w, idx) => <option key={idx} value={`${w.coin_symbol}-${w.network}`}>
+                  {wallets.filter(w => w.balance > 0).map((w, idx) => <option key={idx} value={`${w.coin_symbol}-${w.network}`}>
                       {w.coin_name} ({w.network}) - Balance: {w.balance}
                     </option>)}
                 </select>
@@ -561,9 +724,87 @@ export default function Crypto() {
               <div>
                 <Label>Amount</Label>
                 <Input type="number" value={sendAmount} onChange={e => setSendAmount(e.target.value)} placeholder="0.00" className="mt-1" />
+                {selectedCoin && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Available: {selectedCoin.balance} {selectedCoin.coin_symbol}
+                  </p>
+                )}
               </div>
 
-              <Button onClick={handleSend} className="w-full">Send</Button>
+              {/* Fee Display Section */}
+              {selectedCoin && sendAmount && sendAddress && (() => {
+                const feeCheck = checkFeeBalance();
+                const amount = parseFloat(sendAmount) || 0;
+                
+                return (
+                  <div className="space-y-3">
+                    {/* Fee Breakdown */}
+                    <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Amount</span>
+                        <span className="text-foreground">{amount} {selectedCoin.coin_symbol}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Transaction Fee</span>
+                        <span className="text-foreground">{feeCheck.feeAmount} {feeCheck.feeCoin}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-semibold border-t border-border pt-2">
+                        <span className="text-foreground">Total</span>
+                        <span className="text-foreground">
+                          {selectedCoin.coin_symbol === feeCheck.feeCoin 
+                            ? `${amount + feeCheck.feeAmount} ${selectedCoin.coin_symbol}`
+                            : `${amount} ${selectedCoin.coin_symbol} + ${feeCheck.feeAmount} ${feeCheck.feeCoin}`
+                          }
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Insufficient Fee Warning */}
+                    {!feeCheck.hasFee && (
+                      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 flex items-start gap-2">
+                        <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-destructive font-medium text-sm">Insufficient Crypto Fee</p>
+                          <p className="text-destructive/80 text-xs mt-1">
+                            Please deposit {feeCheck.feeAmount - (feeCheck.feeBalance || 0)} {feeCheck.feeCoin} to complete this transfer.
+                            You currently have {feeCheck.feeBalance || 0} {feeCheck.feeCoin}.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Conditional Button */}
+              {(() => {
+                const feeCheck = checkFeeBalance();
+                
+                if (selectedCoin && sendAmount && sendAddress && !feeCheck.hasFee) {
+                  return (
+                    <Button 
+                      onClick={() => {
+                        setShowSendModal(false);
+                        setShowReceiveModal(true);
+                      }} 
+                      className="w-full" 
+                      variant="destructive"
+                    >
+                      Insufficient Crypto Fee - Deposit {feeCheck.feeAmount} {feeCheck.feeCoin}
+                    </Button>
+                  );
+                }
+                
+                return (
+                  <Button 
+                    onClick={handleSend} 
+                    className="w-full" 
+                    disabled={!selectedCoin || !sendAmount || !sendAddress}
+                  >
+                    Send Crypto
+                  </Button>
+                );
+              })()}
             </div>
           </div>
         </div>}
@@ -718,11 +959,111 @@ export default function Crypto() {
                   </p>
                 </div>}
 
-              <Button onClick={handleInternalCryptoSend} className="w-full" disabled={!selectedCoin || !internalRecipient || !internalSendAmount}>
-                Send Crypto
-              </Button>
+              {/* Fee Display Section */}
+              {selectedCoin && internalRecipient && internalSendAmount && (() => {
+                const feeCheck = checkFeeBalance();
+                const amount = parseFloat(internalSendAmount) || 0;
+                
+                return (
+                  <div className="space-y-3">
+                    {/* Fee Breakdown */}
+                    <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Amount</span>
+                        <span className="text-foreground">{amount} {selectedCoin.coin_symbol}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Transaction Fee</span>
+                        <span className="text-foreground">{feeCheck.feeAmount} {feeCheck.feeCoin}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-semibold border-t border-border pt-2">
+                        <span className="text-foreground">Total</span>
+                        <span className="text-foreground">
+                          {selectedCoin.coin_symbol === feeCheck.feeCoin 
+                            ? `${amount + feeCheck.feeAmount} ${selectedCoin.coin_symbol}`
+                            : `${amount} ${selectedCoin.coin_symbol} + ${feeCheck.feeAmount} ${feeCheck.feeCoin}`
+                          }
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Insufficient Fee Warning */}
+                    {!feeCheck.hasFee && (
+                      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 flex items-start gap-2">
+                        <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-destructive font-medium text-sm">Insufficient Crypto Fee</p>
+                          <p className="text-destructive/80 text-xs mt-1">
+                            Please deposit {feeCheck.feeAmount - (feeCheck.feeBalance || 0)} {feeCheck.feeCoin} to complete this transfer.
+                            You currently have {feeCheck.feeBalance || 0} {feeCheck.feeCoin}.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Conditional Button */}
+              {(() => {
+                const feeCheck = checkFeeBalance();
+                
+                if (selectedCoin && internalRecipient && internalSendAmount && !feeCheck.hasFee) {
+                  return (
+                    <Button 
+                      onClick={() => {
+                        setShowInternalSendModal(false);
+                        setShowReceiveModal(true);
+                      }} 
+                      className="w-full" 
+                      variant="destructive"
+                    >
+                      Insufficient Crypto Fee - Deposit {feeCheck.feeAmount} {feeCheck.feeCoin}
+                    </Button>
+                  );
+                }
+                
+                return (
+                  <Button 
+                    onClick={handleInternalCryptoSend} 
+                    className="w-full" 
+                    disabled={!selectedCoin || !internalRecipient || !internalSendAmount}
+                  >
+                    Send Crypto
+                  </Button>
+                );
+              })()}
             </div>
           </div>
         </div>}
+
+      {/* Receipt Modal */}
+      {showReceipt && receiptData && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+            <CryptoTransferReceipt
+              amount={receiptData.amount}
+              coinSymbol={receiptData.coinSymbol}
+              coinName={receiptData.coinName}
+              network={receiptData.network}
+              recipientName={receiptData.recipientName}
+              recipientAccount={receiptData.recipientAccount}
+              recipientAddress={receiptData.recipientAddress}
+              feeAmount={receiptData.feeAmount}
+              feeCoinSymbol={receiptData.feeCoinSymbol}
+              transactionId={receiptData.transactionId}
+              date={receiptData.date}
+              onClose={() => {
+                setShowReceipt(false);
+                setReceiptData(null);
+                toast({
+                  title: 'Transfer Complete',
+                  description: 'Your crypto transfer was successful'
+                });
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>;
 }
