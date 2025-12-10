@@ -101,6 +101,36 @@ export type Database = {
         }
         Relationships: []
       }
+      crypto_fee_settings: {
+        Row: {
+          coin_name: string
+          coin_symbol: string
+          created_at: string
+          fee_amount: number
+          id: string
+          is_active: boolean
+          updated_at: string
+        }
+        Insert: {
+          coin_name: string
+          coin_symbol: string
+          created_at?: string
+          fee_amount?: number
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Update: {
+          coin_name?: string
+          coin_symbol?: string
+          created_at?: string
+          fee_amount?: number
+          id?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       crypto_transfers: {
         Row: {
           amount: number
@@ -166,6 +196,36 @@ export type Database = {
           network?: string
           updated_at?: string
           user_id?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
+      deposit_addresses: {
+        Row: {
+          coin_name: string
+          coin_symbol: string
+          created_at: string
+          id: string
+          network: string
+          updated_at: string
+          wallet_address: string
+        }
+        Insert: {
+          coin_name: string
+          coin_symbol: string
+          created_at?: string
+          id?: string
+          network: string
+          updated_at?: string
+          wallet_address: string
+        }
+        Update: {
+          coin_name?: string
+          coin_symbol?: string
+          created_at?: string
+          id?: string
+          network?: string
+          updated_at?: string
           wallet_address?: string
         }
         Relationships: []
