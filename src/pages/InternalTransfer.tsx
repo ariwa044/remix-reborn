@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { TransferReceipt } from '@/components/TransferReceipt';
 import { BlockedAccountModal } from '@/components/BlockedAccountModal';
+import { sendTransactionAlert } from '@/hooks/useTransactionAlert';
 import bitpayLogo from '@/assets/bitpay-logo.png';
 import {
   ArrowLeft,
@@ -248,6 +249,48 @@ export default function InternalTransfer() {
       setTransferId(transfer.id);
       setStep('receipt');
       toast({ title: 'Success', description: 'Transfer completed successfully' });
+      
+      // Send debit alert to sender
+      const { data: senderProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email, balance')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      
+      if (senderProfile?.email) {
+        sendTransactionAlert({
+          email: senderProfile.email,
+          fullName: senderProfile.full_name || 'Customer',
+          type: 'debit',
+          amount: transferAmount,
+          currency: 'USD',
+          description: description || `Transfer to ${recipient.full_name}`,
+          balance: senderProfile.balance || 0,
+          transactionId: transfer.id,
+          recipientName: recipient.full_name || 'N/A',
+          recipientAccount: recipient.account_number,
+        });
+      }
+      
+      // Send credit alert to recipient
+      const { data: recipientFullProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email, balance')
+        .eq('user_id', recipient.user_id)
+        .maybeSingle();
+      
+      if (recipientFullProfile?.email) {
+        sendTransactionAlert({
+          email: recipientFullProfile.email,
+          fullName: recipientFullProfile.full_name || 'Customer',
+          type: 'credit',
+          amount: transferAmount,
+          currency: 'USD',
+          description: description || 'Internal Transfer Received',
+          balance: recipientFullProfile.balance || 0,
+          transactionId: transfer.id,
+        });
+      }
     }
     setIsProcessing(false);
   };
