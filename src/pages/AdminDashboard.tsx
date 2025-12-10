@@ -15,8 +15,10 @@ import { toast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Users, DollarSign, CreditCard, ArrowUpDown, Shield, Search, Edit, Ban, CheckCircle, 
-  Plus, Settings, Bitcoin, LayoutDashboard, Wallet, ArrowLeftRight, Receipt, Building, LogOut
+  Plus, Settings, Bitcoin, LayoutDashboard, Wallet, ArrowLeftRight, Receipt, Building, LogOut,
+  Eye, ArrowDownCircle, ArrowUpCircle, X
 } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 
 const CRYPTO_COINS = [
@@ -42,6 +44,7 @@ const AdminDashboard = () => {
   const [editBalanceOpen, setEditBalanceOpen] = useState(false);
   const [fundAccountOpen, setFundAccountOpen] = useState(false);
   const [fundCryptoOpen, setFundCryptoOpen] = useState(false);
+  const [userDetailsOpen, setUserDetailsOpen] = useState(false);
   const [newBalance, setNewBalance] = useState('');
   const [newSavingsBalance, setNewSavingsBalance] = useState('');
   const [fundAmount, setFundAmount] = useState('');
@@ -140,6 +143,23 @@ const AdminDashboard = () => {
       return data;
     },
     enabled: isAdmin,
+  });
+
+  // Fetch transaction history for selected user
+  const { data: userTransactions } = useQuery({
+    queryKey: ['user-transactions', selectedUser?.user_id],
+    queryFn: async () => {
+      if (!selectedUser?.user_id) return [];
+      const { data, error } = await supabase
+        .from('transaction_history')
+        .select('*')
+        .eq('user_id', selectedUser.user_id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedUser?.user_id && userDetailsOpen,
   });
 
   // Update user balance mutation
@@ -600,6 +620,16 @@ const AdminDashboard = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedUser(u);
+                                setUserDetailsOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                             <Button
                               size="sm"
                               variant={u.is_blocked ? 'default' : 'destructive'}
@@ -1117,6 +1147,189 @@ const AdminDashboard = () => {
               Fund Crypto
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Details Dialog */}
+      <Dialog open={userDetailsOpen} onOpenChange={setUserDetailsOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              User Details
+            </DialogTitle>
+            <DialogDescription>
+              Complete profile and transaction history for {selectedUser?.full_name || selectedUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedUser && (
+            <div className="space-y-6">
+              {/* User Info Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Full Name</p>
+                    <p className="font-semibold">{selectedUser.full_name || 'N/A'}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Email</p>
+                    <p className="font-semibold text-sm">{selectedUser.email || 'N/A'}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Account Number</p>
+                    <p className="font-semibold">{selectedUser.account_number || 'N/A'}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Status</p>
+                    <Badge variant={selectedUser.is_blocked ? 'destructive' : 'default'}>
+                      {selectedUser.is_blocked ? 'Blocked' : 'Active'}
+                    </Badge>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Balances */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="bg-primary/5 border-primary/20">
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Main Balance</p>
+                        <p className="text-2xl font-bold text-primary">${(selectedUser.balance || 0).toLocaleString()}</p>
+                      </div>
+                      <DollarSign className="h-8 w-8 text-primary opacity-50" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-purple-500/5 border-purple-500/20">
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Savings Balance</p>
+                        <p className="text-2xl font-bold text-purple-500">${(selectedUser.savings_balance || 0).toLocaleString()}</p>
+                      </div>
+                      <CreditCard className="h-8 w-8 text-purple-500 opacity-50" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Transaction History */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Transaction History</h3>
+                <Card>
+                  <ScrollArea className="h-[300px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {userTransactions?.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                              No transactions found
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          userTransactions?.map((tx) => (
+                            <TableRow key={tx.id}>
+                              <TableCell className="text-sm">
+                                {format(new Date(tx.created_at), 'MMM dd, yyyy HH:mm')}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  {tx.transaction_type === 'credit' || tx.transaction_type === 'crypto_credit' ? (
+                                    <ArrowDownCircle className="h-4 w-4 text-green-500" />
+                                  ) : (
+                                    <ArrowUpCircle className="h-4 w-4 text-red-500" />
+                                  )}
+                                  <span className="capitalize text-sm">{tx.transaction_type.replace('_', ' ')}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">{tx.description || 'N/A'}</TableCell>
+                              <TableCell>
+                                {tx.crypto_amount ? (
+                                  <span className="font-medium">{tx.crypto_amount} {tx.crypto_symbol}</span>
+                                ) : (
+                                  <span className={`font-medium ${tx.transaction_type === 'credit' ? 'text-green-500' : 'text-red-500'}`}>
+                                    {tx.transaction_type === 'credit' ? '+' : '-'}${tx.amount.toLocaleString()}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={tx.status === 'completed' ? 'default' : 'secondary'}>
+                                  {tx.status}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </Card>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="flex gap-2 pt-2">
+                <Button 
+                  onClick={() => {
+                    setUserDetailsOpen(false);
+                    handleFundAccount(selectedUser);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Fund Account
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    setUserDetailsOpen(false);
+                    handleEditBalance(selectedUser);
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-1" /> Edit Balance
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    setUserDetailsOpen(false);
+                    handleFundCrypto(selectedUser);
+                  }}
+                >
+                  <Bitcoin className="h-4 w-4 mr-1" /> Fund Crypto
+                </Button>
+                <Button
+                  variant={selectedUser.is_blocked ? 'default' : 'destructive'}
+                  onClick={() => {
+                    toggleBlockMutation.mutate({ 
+                      userId: selectedUser.user_id, 
+                      isBlocked: !selectedUser.is_blocked 
+                    });
+                    setUserDetailsOpen(false);
+                  }}
+                >
+                  {selectedUser.is_blocked ? (
+                    <><CheckCircle className="h-4 w-4 mr-1" /> Unblock</>
+                  ) : (
+                    <><Ban className="h-4 w-4 mr-1" /> Block</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
