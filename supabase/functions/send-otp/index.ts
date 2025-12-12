@@ -85,22 +85,26 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    // Create SMTP client for Hostinger
+    console.log("Connecting to SMTP server...");
+    
+    // Create SMTP client for Hostinger using port 587 with STARTTLS
     const client = new SMTPClient({
       connection: {
-        hostname: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
-        port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
-        tls: true,
+        hostname: "smtp.hostinger.com",
+        port: 587,
+        tls: false,
         auth: {
-          username: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+          username: "no-reply@money-pay.online",
           password: Deno.env.get("SMTP_PASSWORD") || "",
         },
       },
     });
 
+    console.log("Sending email...");
+
     // Send email
     await client.send({
-      from: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+      from: "no-reply@money-pay.online",
       to: email,
       subject: "Your BitPay Verification Code",
       content: `Your verification code is: ${otp}. This code expires in 10 minutes.`,
