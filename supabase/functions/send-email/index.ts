@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { Resend } from "https://esm.sh/resend@2.0.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,28 +23,19 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Attempting to send email to: ${to}`);
 
-    // Create SMTP client for Hostinger using port 587 with STARTTLS
-    const client = new SMTPClient({
-      connection: {
-        hostname: "smtp.hostinger.com",
-        port: 587,
-        tls: false,
-        auth: {
-          username: "no-reply@money-pay.online",
-          password: Deno.env.get("SMTP_PASSWORD") || "",
-        },
-      },
-    });
+    const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
-    await client.send({
-      from: "no-reply@money-pay.online",
-      to: to,
+    const { error } = await resend.emails.send({
+      from: "BitPay <no-reply@money-pay.online>",
+      to: [to],
       subject: subject,
-      content: text || "",
       html: html,
     });
 
-    await client.close();
+    if (error) {
+      console.error("Error sending email:", error);
+      throw new Error(error.message || "Failed to send email");
+    }
 
     console.log("Email sent successfully to:", to);
 
