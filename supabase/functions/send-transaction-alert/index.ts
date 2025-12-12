@@ -1,8 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Buffer } from "node:buffer";
-// @ts-ignore - polyfill for nodemailer
-globalThis.Buffer = Buffer;
-import nodemailer from "https://esm.sh/nodemailer@6.9.10";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,16 +44,6 @@ const handler = async (req: Request): Promise<Response> => {
     const alertColor = isCredit ? "#22c55e" : "#ef4444";
     const alertTitle = isCredit ? "Credit Alert" : "Debit Alert";
     const alertIcon = isCredit ? "+" : "-";
-
-    const transporter = nodemailer.createTransport({
-      host: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
-      port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
-      secure: true,
-      auth: {
-        user: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
-        pass: Deno.env.get("SMTP_PASSWORD") || "",
-      },
-    });
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -135,13 +122,28 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    await transporter.sendMail({
-      from: `"BitPay" <${Deno.env.get("SMTP_USER") || "no-reply@money-pay.online"}>`,
+    // Create SMTP client for Hostinger
+    const client = new SMTPClient({
+      connection: {
+        hostname: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
+        port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
+        tls: true,
+        auth: {
+          username: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+          password: Deno.env.get("SMTP_PASSWORD") || "",
+        },
+      },
+    });
+
+    await client.send({
+      from: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
       to: email,
       subject: `BitPay ${alertTitle}: ${currency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      text: `${alertTitle}: ${alertIcon}${currency} ${amount}. Description: ${description}. Available Balance: ${currency} ${balance}`,
+      content: `${alertTitle}: ${alertIcon}${currency} ${amount}. Description: ${description}. Available Balance: ${currency} ${balance}`,
       html: htmlContent,
     });
+
+    await client.close();
 
     console.log("Transaction alert sent successfully to:", email);
 
