@@ -23,21 +23,21 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Attempting to send email to: ${to}`);
 
-    // Create SMTP client for Hostinger
+    // Create SMTP client for Hostinger using port 587 with STARTTLS
     const client = new SMTPClient({
       connection: {
-        hostname: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
-        port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
-        tls: true,
+        hostname: "smtp.hostinger.com",
+        port: 587,
+        tls: false,
         auth: {
-          username: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+          username: "no-reply@money-pay.online",
           password: Deno.env.get("SMTP_PASSWORD") || "",
         },
       },
     });
 
     await client.send({
-      from: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+      from: "no-reply@money-pay.online",
       to: to,
       subject: subject,
       content: text || "",

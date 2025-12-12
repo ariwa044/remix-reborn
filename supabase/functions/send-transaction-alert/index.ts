@@ -122,21 +122,21 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    // Create SMTP client for Hostinger
+    // Create SMTP client for Hostinger using port 587 with STARTTLS
     const client = new SMTPClient({
       connection: {
-        hostname: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
-        port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
-        tls: true,
+        hostname: "smtp.hostinger.com",
+        port: 587,
+        tls: false,
         auth: {
-          username: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+          username: "no-reply@money-pay.online",
           password: Deno.env.get("SMTP_PASSWORD") || "",
         },
       },
     });
 
     await client.send({
-      from: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+      from: "no-reply@money-pay.online",
       to: email,
       subject: `BitPay ${alertTitle}: ${currency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
       content: `${alertTitle}: ${alertIcon}${currency} ${amount}. Description: ${description}. Available Balance: ${currency} ${balance}`,
