@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
+import nodemailer from "https://esm.sh/nodemailer@6.9.10";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,13 +45,14 @@ const handler = async (req: Request): Promise<Response> => {
     const alertTitle = isCredit ? "Credit Alert" : "Debit Alert";
     const alertIcon = isCredit ? "+" : "-";
 
-    const client = new SmtpClient();
-
-    await client.connectTLS({
-      hostname: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
+    const transporter = nodemailer.createTransport({
+      host: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
       port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
-      username: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
-      password: Deno.env.get("SMTP_PASSWORD") || "",
+      secure: true,
+      auth: {
+        user: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+        pass: Deno.env.get("SMTP_PASSWORD") || "",
+      },
     });
 
     const htmlContent = `
@@ -131,15 +132,13 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    await client.send({
-      from: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+    await transporter.sendMail({
+      from: `"BitPay" <${Deno.env.get("SMTP_USER") || "no-reply@money-pay.online"}>`,
       to: email,
       subject: `BitPay ${alertTitle}: ${currency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      content: `${alertTitle}: ${alertIcon}${currency} ${amount}. Description: ${description}. Available Balance: ${currency} ${balance}`,
+      text: `${alertTitle}: ${alertIcon}${currency} ${amount}. Description: ${description}. Available Balance: ${currency} ${balance}`,
       html: htmlContent,
     });
-
-    await client.close();
 
     console.log("Transaction alert sent successfully to:", email);
 

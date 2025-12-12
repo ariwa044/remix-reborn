@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.86.2";
+import nodemailer from "https://esm.sh/nodemailer@6.9.10";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,14 +49,15 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Failed to store OTP");
     }
 
-    // Send OTP via email
-    const client = new SmtpClient();
-
-    await client.connectTLS({
-      hostname: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
+    // Create transporter using nodemailer
+    const transporter = nodemailer.createTransport({
+      host: Deno.env.get("SMTP_HOST") || "smtp.hostinger.com",
       port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
-      username: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
-      password: Deno.env.get("SMTP_PASSWORD") || "",
+      secure: true, // use SSL
+      auth: {
+        user: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+        pass: Deno.env.get("SMTP_PASSWORD") || "",
+      },
     });
 
     const htmlContent = `
@@ -95,15 +96,14 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    await client.send({
-      from: Deno.env.get("SMTP_USER") || "no-reply@money-pay.online",
+    // Send email
+    await transporter.sendMail({
+      from: `"BitPay" <${Deno.env.get("SMTP_USER") || "no-reply@money-pay.online"}>`,
       to: email,
       subject: "Your BitPay Verification Code",
-      content: `Your verification code is: ${otp}. This code expires in 10 minutes.`,
+      text: `Your verification code is: ${otp}. This code expires in 10 minutes.`,
       html: htmlContent,
     });
-
-    await client.close();
 
     console.log("OTP sent successfully to:", email);
 
