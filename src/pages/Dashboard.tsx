@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import bitpayLogo from '@/assets/bitpay-logo.png';
-import { CreditCard, Wallet, TrendingUp, Send, Download, ArrowUpRight, Bell, Settings, LogOut, Menu, X, Eye, EyeOff, RefreshCw, DollarSign, Landmark, PiggyBank, Users } from 'lucide-react';
+import { CreditCard, Wallet, TrendingUp, Send, Download, ArrowUpRight, Bell, Settings, LogOut, Menu, X, Eye, EyeOff, RefreshCw, DollarSign, Landmark, PiggyBank, Users, History } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 interface Transfer {
@@ -280,7 +280,7 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Actions Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <button onClick={() => navigate('/send')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
             <Users className="h-6 w-6 text-blue-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-foreground">Send</span>
@@ -293,17 +293,28 @@ export default function Dashboard() {
             <Download className="h-6 w-6 text-green-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-foreground">Deposit</span>
           </button>
-          <button onClick={() => navigate('/profile')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
-            <Settings className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-            <span className="text-sm font-medium text-foreground">Profile</span>
-          </button>
           <button onClick={() => navigate('/crypto')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
             <TrendingUp className="h-6 w-6 text-orange-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-foreground">Crypto</span>
           </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <button onClick={() => navigate('/atm-card')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
             <CreditCard className="h-6 w-6 text-purple-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-foreground">ATM Card</span>
+          </button>
+          <button onClick={() => navigate('/history')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <History className="h-6 w-6 text-cyan-500 mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">History</span>
+          </button>
+          <button onClick={() => navigate('/profile')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <Settings className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">Profile</span>
+          </button>
+          <button onClick={() => navigate('/admin')} className="bg-card border border-border rounded-xl p-4 hover:border-primary transition-colors text-center">
+            <Landmark className="h-6 w-6 text-red-500 mx-auto mb-2" />
+            <span className="text-sm font-medium text-foreground">Admin</span>
           </button>
         </div>
 
