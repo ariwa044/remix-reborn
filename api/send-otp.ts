@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import nodemailer from "nodemailer";
-import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 interface OTPRequest {
   email: string;
@@ -9,6 +9,11 @@ interface OTPRequest {
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function generateToken(otp: string, email: string): string {
+  const data = JSON.stringify({ otp, email, timestamp: Date.now() });
+  return Buffer.from(data).toString("base64");
 }
 
 export default async (req: VercelRequest, res: VercelResponse) => {
@@ -31,27 +36,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
     console.log(`Generating OTP for: ${email}`);
 
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
-
-    // Store OTP in database
-    const supabaseUrl = process.env.VITE_SUPABASE_URL!;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Delete any existing OTP for this email
-    await supabase.from("otp_verifications").delete().eq("email", email);
-
-    // Insert new OTP
-    const { error: insertError } = await supabase.from("otp_verifications").insert({
-      email,
-      otp_code: otp,
-      expires_at: expiresAt.toISOString(),
-    });
-
-    if (insertError) {
-      console.error("Error storing OTP:", insertError);
-      throw new Error("Failed to store OTP");
-    }
+    const token = generateToken(otp, email);
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -120,7 +105,11 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
     console.log("OTP sent successfully to:", email);
 
-    return res.status(200).json({ success: true, message: "OTP sent successfully" });
+    return res.status(200).json({ 
+      success: true, 
+      message: "OTP sent successfully",
+      token: token 
+    });
   } catch (error: any) {
     console.error("Error in send-otp function:", error);
     return res.status(500).json({ error: error.message });
