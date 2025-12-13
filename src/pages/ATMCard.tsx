@@ -29,22 +29,55 @@ export default function ATMCard() {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    const fetchCard = async () => {
+    const fetchOrCreateCard = async () => {
       if (!user) return;
 
-      const { data } = await supabase
+      const { data: existingCard } = await supabase
         .from('atm_cards')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (data) {
-        setCard(data);
+      if (existingCard) {
+        setCard(existingCard);
+        setIsLoading(false);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const cardNumber = '5' + Array.from({ length: 15 }, () => Math.floor(Math.random() * 10)).join('');
+      const now = new Date();
+      const expiryMonth = String(now.getMonth() + 1).padStart(2, '0');
+      const expiryYear = String((now.getFullYear() + 5) % 100).padStart(2, '0');
+      const expiryDate = `${expiryMonth}/${expiryYear}`;
+      const cvv = String(Math.floor(Math.random() * 900) + 100);
+
+      const { data: newCard, error } = await supabase
+        .from('atm_cards')
+        .insert({
+          user_id: user.id,
+          card_number: cardNumber,
+          card_holder_name: profile?.full_name || user.user_metadata?.full_name || 'CARD HOLDER',
+          expiry_date: expiryDate,
+          cvv: cvv,
+          card_type: 'mastercard',
+          status: 'active'
+        })
+        .select()
+        .single();
+
+      if (!error && newCard) {
+        setCard(newCard);
       }
       setIsLoading(false);
     };
 
-    fetchCard();
+    fetchOrCreateCard();
   }, [user]);
 
   const formatCardNumber = (num: string) => {
@@ -63,13 +96,12 @@ export default function ATMCard() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center gap-4">
           <button onClick={() => navigate('/dashboard')} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-6 w-6" />
           </button>
-          <img src={bitpayLogo} alt="Heritage Bank" className="h-8 w-auto" />
+          <img src={bitpayLogo} alt="BitPay" className="h-8 w-auto" />
           <h1 className="text-lg font-semibold text-foreground">My Card</h1>
         </div>
       </header>
@@ -77,11 +109,10 @@ export default function ATMCard() {
       <main className="container mx-auto px-4 py-8 max-w-lg">
         {card ? (
           <>
-            {/* Card Display with Flip Animation */}
             <div className="mb-8">
               <p className="text-center text-muted-foreground text-sm mb-4">Tap card to view CVV</p>
               <div 
-                className="relative w-full max-w-[340px] mx-auto cursor-pointer"
+                className="relative w-full max-w-[380px] mx-auto cursor-pointer"
                 style={{ perspective: '1000px' }}
                 onClick={() => setIsFlipped(!isFlipped)}
               >
@@ -94,50 +125,62 @@ export default function ATMCard() {
                 >
                   {/* Front of Card */}
                   <div 
-                    className="w-full aspect-[1.586/1] rounded-2xl p-5 shadow-2xl"
+                    className="w-full aspect-[1.586/1] rounded-2xl p-6 shadow-2xl relative overflow-hidden"
                     style={{ 
                       backfaceVisibility: 'hidden',
-                      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'
+                      background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 30%, #2d2d2d 70%, #1a1a1a 100%)'
                     }}
                   >
-                    {/* Background Pattern */}
-                    <div className="absolute inset-0 opacity-20 overflow-hidden rounded-2xl">
-                      <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-primary rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
+                    <div className="absolute inset-0 overflow-hidden">
+                      <div className="absolute -top-20 -right-20 w-64 h-64 bg-gradient-to-br from-red-600/30 to-orange-500/20 rounded-full blur-3xl" />
+                      <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-gradient-to-tr from-yellow-500/20 to-red-600/30 rounded-full blur-3xl" />
                     </div>
 
                     <div className="relative z-10 h-full flex flex-col justify-between">
-                      {/* Card Header */}
                       <div className="flex items-center justify-between">
-                        <p className="text-white/60 text-xs font-medium tracking-wider">HERITAGE BANK</p>
-                        <div className="flex items-center gap-2">
-                          <Wifi className="h-5 w-5 text-white/60 rotate-90" />
-                          <div className="w-9 h-7 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-md" />
+                        <div>
+                          <h2 className="text-white font-bold text-xl tracking-wider">BITPAY</h2>
+                          <p className="text-white/50 text-[10px] tracking-widest">DIGITAL BANK</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Wifi className="h-5 w-5 text-white/70 rotate-90" />
+                          <div className="w-12 h-9 rounded-md overflow-hidden">
+                            <div className="w-full h-full bg-gradient-to-br from-yellow-300 via-yellow-400 to-yellow-600 relative">
+                              <div className="absolute inset-1 grid grid-cols-3 gap-[1px]">
+                                {[...Array(6)].map((_, i) => (
+                                  <div key={i} className="bg-yellow-700/30 rounded-sm" />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Card Number */}
-                      <div className="my-4">
-                        <p className="text-white text-lg md:text-xl font-mono tracking-[0.2em]">
+                      <div className="my-6">
+                        <p className="text-white text-xl md:text-2xl font-mono tracking-[0.25em] drop-shadow-lg">
                           {formatCardNumber(card.card_number)}
                         </p>
                       </div>
 
-                      {/* Card Footer */}
                       <div className="flex items-end justify-between">
-                        <div>
-                          <p className="text-white/50 text-[10px] uppercase mb-1">Card Holder</p>
-                          <p className="text-white font-semibold text-sm uppercase tracking-wide">{card.card_holder_name}</p>
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-white/40 text-[10px] uppercase tracking-wider">Card Holder</p>
+                            <p className="text-white font-semibold text-sm uppercase tracking-wider">
+                              {card.card_holder_name}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-white/40 text-[10px] uppercase tracking-wider">Valid Thru</p>
+                            <p className="text-white font-mono text-sm tracking-wider">{card.expiry_date}</p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-white/50 text-[10px] uppercase mb-1">Expires</p>
-                          <p className="text-white font-mono text-sm">{card.expiry_date}</p>
-                        </div>
-                        {/* Visa Logo */}
-                        <div className="flex flex-col items-end">
-                          <svg viewBox="0 0 48 16" className="h-8 w-auto">
-                            <path fill="#fff" d="M19.4 1.3L15.3 14.7H12.1L9.4 4.2C9.2 3.5 9.1 3.2 8.5 2.9C7.5 2.4 5.9 2 4.5 1.7L4.6 1.3H10C10.9 1.3 11.6 1.9 11.8 2.9L13.4 11.5L16.5 1.3H19.4ZM32.7 10.5C32.7 7 27.8 6.8 27.9 5.2C27.9 4.7 28.4 4.1 29.4 4C29.9 3.9 31.4 3.9 33 4.6L33.6 1.7C32.7 1.4 31.6 1 30.2 1C27.4 1 25.4 2.5 25.4 4.6C25.4 6.2 26.8 7.1 27.9 7.6C29 8.2 29.4 8.5 29.4 9C29.3 9.8 28.4 10.1 27.5 10.1C25.7 10.1 24.6 9.6 23.8 9.3L23.2 12.3C24.1 12.7 25.6 13 27.2 13C30.2 13 32.7 11.6 32.7 10.5ZM40.6 14.7H43.4L41 1.3H38.4C37.6 1.3 37 1.7 36.7 2.4L32.3 14.7H35.5L36.1 13H40L40.6 14.7ZM37 10.6L38.5 5.9L39.4 10.6H37ZM24.8 1.3L22.3 14.7H19.2L21.7 1.3H24.8Z"/>
-                          </svg>
+                        
+                        <div className="flex items-center">
+                          <div className="relative w-16 h-10">
+                            <div className="absolute left-0 w-10 h-10 bg-red-600 rounded-full opacity-90" />
+                            <div className="absolute right-0 w-10 h-10 bg-yellow-500 rounded-full opacity-90" />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -145,38 +188,41 @@ export default function ATMCard() {
 
                   {/* Back of Card */}
                   <div 
-                    className="absolute inset-0 w-full aspect-[1.586/1] rounded-2xl shadow-2xl"
+                    className="absolute inset-0 w-full aspect-[1.586/1] rounded-2xl shadow-2xl overflow-hidden"
                     style={{ 
                       backfaceVisibility: 'hidden',
                       transform: 'rotateY(180deg)',
-                      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'
+                      background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #2d2d2d 100%)'
                     }}
                   >
-                    {/* Magnetic Stripe */}
-                    <div className="absolute top-8 left-0 right-0 h-10 bg-gray-900" />
+                    <div className="absolute top-8 left-0 right-0 h-12 bg-gray-900" />
                     
-                    {/* CVV Section */}
                     <div className="absolute top-24 left-4 right-4">
-                      <div className="flex items-center">
-                        <div className="flex-1 h-8 bg-white rounded-l flex items-center justify-end pr-2">
-                          <div className="flex gap-0.5">
-                            {[...Array(16)].map((_, i) => (
-                              <span key={i} className="text-gray-400 text-xs">X</span>
-                            ))}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-10 bg-gradient-to-r from-gray-100 to-white rounded flex items-center px-3">
+                          <div className="flex-1">
+                            <div className="text-gray-400 text-[10px] italic">Authorized Signature</div>
                           </div>
                         </div>
-                        <div className="w-12 h-8 bg-white flex items-center justify-center rounded-r border-l border-gray-300">
-                          <span className="text-gray-900 font-mono font-bold text-sm">{card.cvv}</span>
+                        <div className="w-16 h-10 bg-white flex items-center justify-center rounded border-l-2 border-gray-200">
+                          <span className="text-gray-900 font-mono font-bold text-lg">{card.cvv}</span>
                         </div>
                       </div>
-                      <p className="text-white/50 text-[10px] mt-2 text-right">CVV</p>
+                      <p className="text-white/50 text-[10px] mt-2 text-right uppercase tracking-wider">CVV / CVC</p>
                     </div>
 
-                    {/* Card Info */}
-                    <div className="absolute bottom-4 left-4 right-4">
-                      <p className="text-white/40 text-[8px] leading-relaxed">
-                        This card is property of Heritage Bank. Use of this card is subject to the card member agreement.
-                        If found, please return to any Heritage Bank branch.
+                    <div className="absolute bottom-4 left-4 right-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-white/60 text-[10px] font-bold tracking-wider">BITPAY DIGITAL BANK</p>
+                        <div className="flex items-center">
+                          <div className="relative w-10 h-6">
+                            <div className="absolute left-0 w-6 h-6 bg-red-600 rounded-full opacity-90" />
+                            <div className="absolute right-0 w-6 h-6 bg-yellow-500 rounded-full opacity-90" />
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-white/30 text-[8px] leading-relaxed">
+                        This card is property of BitPay Digital Bank. Use of this card is subject to the cardholder agreement.
                       </p>
                     </div>
                   </div>
@@ -184,10 +230,9 @@ export default function ATMCard() {
               </div>
             </div>
 
-            {/* Card Status */}
             <div className="bg-card border border-border rounded-xl p-4 mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${card.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`} />
+                <div className={`w-3 h-3 rounded-full ${card.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
                 <span className="text-foreground font-medium">Card Status</span>
               </div>
               <span className={`capitalize font-semibold ${card.status === 'active' ? 'text-green-500' : 'text-red-500'}`}>
@@ -195,7 +240,19 @@ export default function ATMCard() {
               </span>
             </div>
 
-            {/* Card Features */}
+            <div className="bg-gradient-to-r from-red-600/10 to-yellow-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Card Type</p>
+                  <p className="text-lg font-bold text-foreground capitalize">{card.card_type}</p>
+                </div>
+                <div className="relative w-12 h-8">
+                  <div className="absolute left-0 w-8 h-8 bg-red-600 rounded-full opacity-90" />
+                  <div className="absolute right-0 w-8 h-8 bg-yellow-500 rounded-full opacity-90" />
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-4 mb-8">
               <h3 className="text-lg font-semibold text-foreground">Card Features</h3>
               
@@ -228,6 +285,17 @@ export default function ATMCard() {
                 <div className="flex-1">
                   <p className="font-medium text-foreground">Chip & PIN Security</p>
                   <p className="text-sm text-muted-foreground">EMV chip for secure transactions</p>
+                </div>
+                <CheckCircle className="h-5 w-5 text-green-500" />
+              </div>
+
+              <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
+                <div className="bg-orange-500/10 rounded-lg p-3">
+                  <CreditCard className="h-5 w-5 text-orange-500" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-foreground">Worldwide Acceptance</p>
+                  <p className="text-sm text-muted-foreground">Use anywhere Mastercard is accepted</p>
                 </div>
                 <CheckCircle className="h-5 w-5 text-green-500" />
               </div>
