@@ -96,11 +96,16 @@ export default function Auth() {
 
     setOtpSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: { email, fullName },
+      const response = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, fullName }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send OTP');
+      }
 
       toast({
         title: "OTP Sent!",
