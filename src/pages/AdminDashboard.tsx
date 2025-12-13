@@ -375,14 +375,21 @@ const AdminDashboard = () => {
       
       if (transferError) throw transferError;
 
-      // Update transaction history for this user
+      // Update transaction history for this transfer using reference_id
       const { error: historyError } = await supabase
         .from('transaction_history')
         .update({ status: 'completed' })
-        .eq('user_id', userId)
-        .eq('status', 'pending');
+        .eq('reference_id', transferId);
 
       if (historyError) console.error('History update error:', historyError);
+
+      // Also update any pending transactions for this user that match
+      await supabase
+        .from('transaction_history')
+        .update({ status: 'completed' })
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .eq('transaction_type', 'transfer');
 
       await supabase.from('admin_logs').insert({
         admin_id: user!.id,
@@ -394,6 +401,7 @@ const AdminDashboard = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-transfers'] });
       queryClient.invalidateQueries({ queryKey: ['user-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactionHistory'] });
       toast({ title: 'Success', description: 'Transfer approved and marked as completed' });
     },
     onError: (error: any) => {

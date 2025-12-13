@@ -30,8 +30,8 @@ interface CryptoWallet {
   balance: number;
 }
 
-// Company deposit addresses for users to receive crypto
-const COMPANY_ADDRESSES: Record<string, string> = {
+// Default fallback addresses (will be overridden by admin-configured addresses)
+const DEFAULT_ADDRESSES: Record<string, string> = {
   'BTC-Bitcoin': 'bc1qhwutfxhl9062uxjswwgc7dr4zv8fwkekm4u42s',
   'ETH-ERC20': '0xc254e04bf79df093e821ba9e8e8f366e01b36d66',
   'BNB-BEP20': '0xc254e04bf79df093e821ba9e8e8f366e01b36d66',
@@ -138,6 +138,36 @@ export default function Crypto() {
   const [convertAmount, setConvertAmount] = useState('');
   const [convertDirection, setConvertDirection] = useState<'toBank' | 'toCrypto'>('toBank');
   const [convertCoin, setConvertCoin] = useState<string>('');
+  const [depositAddresses, setDepositAddresses] = useState<Record<string, string>>({});
+
+  // Fetch admin-configured deposit addresses
+  const { data: adminDepositAddresses } = useQuery({
+    queryKey: ['depositAddresses'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('deposit_addresses')
+        .select('*');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Build deposit addresses map from admin settings
+  useEffect(() => {
+    if (adminDepositAddresses) {
+      const addressMap: Record<string, string> = {};
+      adminDepositAddresses.forEach(addr => {
+        addressMap[`${addr.coin_symbol}-${addr.network}`] = addr.wallet_address;
+      });
+      setDepositAddresses(addressMap);
+    }
+  }, [adminDepositAddresses]);
+
+  // Get the deposit address for a coin (admin-configured or fallback)
+  const getDepositAddress = (coinSymbol: string, network: string) => {
+    const key = `${coinSymbol}-${network}`;
+    return depositAddresses[key] || DEFAULT_ADDRESSES[key] || '';
+  };
 
   // Fetch crypto prices from CoinGecko
   const {
@@ -173,7 +203,7 @@ export default function Crypto() {
           coin_symbol: coin.symbol,
           coin_name: coin.name,
           network: coin.network,
-          wallet_address: COMPANY_ADDRESSES[`${coin.symbol}-${coin.network}`] || '',
+          wallet_address: getDepositAddress(coin.symbol, coin.network),
           balance: 0
         }));
         const {
@@ -415,7 +445,7 @@ export default function Crypto() {
         coin_symbol: selectedCoin.coin_symbol,
         coin_name: selectedCoin.coin_name,
         network: selectedCoin.network,
-        wallet_address: COMPANY_ADDRESSES[`${selectedCoin.coin_symbol}-${selectedCoin.network}`] || '',
+        wallet_address: getDepositAddress(selectedCoin.coin_symbol, selectedCoin.network),
         balance: amount
       });
     }
@@ -697,7 +727,7 @@ export default function Crypto() {
             {wallets.map((wallet, idx) => {
             const coinInfo = SUPPORTED_COINS.find(c => c.symbol === wallet.coin_symbol && c.network === wallet.network);
             const priceData = coinInfo ? getPrice(coinInfo.coingeckoId) : null;
-            const companyAddress = COMPANY_ADDRESSES[`${wallet.coin_symbol}-${wallet.network}`];
+            const companyAddress = getDepositAddress(wallet.coin_symbol, wallet.network);
             const rate = priceData?.current_price || (wallet.coin_symbol === 'USDT' || wallet.coin_symbol === 'PI' ? 1 : 0);
             return <div key={idx} className="bg-card border border-border rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -866,7 +896,7 @@ export default function Crypto() {
             
             <div className="space-y-3">
               {wallets.map((wallet, idx) => {
-            const companyAddress = COMPANY_ADDRESSES[`${wallet.coin_symbol}-${wallet.network}`];
+            const companyAddress = getDepositAddress(wallet.coin_symbol, wallet.network);
             return <div key={idx} className="bg-secondary/50 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-semibold text-foreground">{wallet.coin_name}</span>
