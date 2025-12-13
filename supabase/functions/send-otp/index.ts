@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.86.2";
-import { Resend } from "https://esm.sh/resend@2.0.0";
+import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -85,18 +85,37 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    console.log("Sending OTP email via Resend...");
+    console.log("Sending OTP email via Hostinger SMTP...");
 
-    const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+    const smtpHost = Deno.env.get("SMTP_HOST") || "smtp.hostinger.com";
+    const smtpPort = parseInt(Deno.env.get("SMTP_PORT") || "465");
+    const smtpUser = Deno.env.get("SMTP_USER");
+    const smtpPassword = Deno.env.get("SMTP_PASSWORD");
+    const fromEmail = Deno.env.get("SMTP_FROM_EMAIL") || "no-reply@money-pay.online";
 
-    const { error: emailError } = await resend.emails.send({
-      from: "BitPay <no-reply@money-pay.online>",
-      to: [email],
-      subject: "Your BitPay Verification Code",
-      html: htmlContent,
-    });
+    if (!smtpUser || !smtpPassword) {
+      throw new Error("SMTP credentials not configured");
+    }
 
-    if (emailError) {
+    const client = new SmtpClient();
+
+    try {
+      await client.connectTLS({
+        hostname: smtpHost,
+        port: smtpPort,
+        username: smtpUser,
+        password: smtpPassword,
+      });
+
+      await client.send({
+        from: fromEmail,
+        to: email,
+        subject: "Your BitPay Verification Code",
+        html: htmlContent,
+      });
+
+      await client.close();
+    } catch (emailError: any) {
       console.error("Error sending email:", emailError);
       throw new Error(emailError.message || "Failed to send email");
     }
