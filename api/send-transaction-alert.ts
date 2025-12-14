@@ -1,10 +1,5 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { VercelRequest, VercelResponse } from "@vercel/node";
+import nodemailer from "nodemailer";
 
 interface AlertRequest {
   email: string;
@@ -19,24 +14,33 @@ interface AlertRequest {
   recipientAccount?: string;
 }
 
-const handler = async (req: Request): Promise<Response> => {
+export default async (req: VercelRequest, res: VercelResponse) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    return res.status(200).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const { 
-      email, 
-      fullName, 
-      type, 
-      amount, 
-      currency, 
-      description, 
-      balance, 
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    const {
+      email,
+      fullName,
+      type,
+      amount,
+      currency,
+      description,
+      balance,
       transactionId,
       recipientName,
-      recipientAccount
-    }: AlertRequest = await req.json();
+      recipientAccount,
+    }: AlertRequest = req.body;
 
     console.log(`Sending ${type} alert to: ${email}`);
 
@@ -122,55 +126,38 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    const smtpHost = Deno.env.get("SMTP_HOST") || "smtp.hostinger.com";
-    const smtpPort = parseInt(Deno.env.get("SMTP_PORT") || "465");
-    const smtpUser = Deno.env.get("SMTP_USER");
-    const smtpPassword = Deno.env.get("SMTP_PASSWORD");
-    const fromEmail = Deno.env.get("SMTP_FROM_EMAIL") || "no-reply@money-pay.online";
+    const smtpHost = process.env.SMTP_HOST || "smtp.hostinger.com";
+    const smtpPort = parseInt(process.env.SMTP_PORT || "465");
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPassword = process.env.SMTP_PASSWORD;
+    const fromEmail = process.env.SMTP_FROM_EMAIL || "no-reply@money-pay.online";
 
     if (!smtpUser || !smtpPassword) {
       throw new Error("SMTP credentials not configured");
     }
 
-    const client = new SmtpClient();
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: true,
+      auth: {
+        user: smtpUser,
+        pass: smtpPassword,
+      },
+    });
 
-    try {
-      await client.connectTLS({
-        hostname: smtpHost,
-        port: smtpPort,
-        username: smtpUser,
-        password: smtpPassword,
-      });
-
-      await client.send({
-        from: fromEmail,
-        to: email,
-        subject: `BitPay ${alertTitle}: ${currency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-        html: htmlContent,
-      });
-
-      await client.close();
-    } catch (error: any) {
-      console.error("Error sending email:", error);
-      throw new Error(error.message || "Failed to send email");
-    }
+    await transporter.sendMail({
+      from: fromEmail,
+      to: email,
+      subject: `BitPay ${alertTitle}: ${currency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      html: htmlContent,
+    });
 
     console.log("Transaction alert sent successfully to:", email);
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
+    return res.status(200).json({ success: true });
   } catch (error: any) {
     console.error("Error sending transaction alert:", error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
-    );
+    return res.status(500).json({ error: error.message });
   }
 };
-
-serve(handler);

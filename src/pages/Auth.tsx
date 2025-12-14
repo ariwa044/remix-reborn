@@ -39,6 +39,7 @@ export default function Auth() {
   const [otp, setOtp] = useState('');
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [otpToken, setOtpToken] = useState('');
   const [resendTimer, setResendTimer] = useState(0);
 
   const { signIn, signUp, user } = useAuth();
@@ -96,11 +97,19 @@ export default function Auth() {
 
     setOtpSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: { email, fullName },
+      const response = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, fullName }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send OTP');
+      }
+
+      const data = await response.json();
+      setOtpToken(data.token);
 
       toast({
         title: "OTP Sent!",
@@ -132,11 +141,22 @@ export default function Auth() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('verify-otp', {
-        body: { email, otp },
+      const response = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp, token: otpToken }),
       });
 
-      if (error) throw error;
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast({
+          variant: "destructive",
+          title: "Verification Failed",
+          description: data.error || "Invalid or expired code.",
+        });
+        return;
+      }
 
       if (data.success) {
         setOtpVerified(true);
@@ -400,6 +420,7 @@ export default function Auth() {
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
                     className="bg-secondary border-border pr-10"
                   />
                   <button
@@ -424,6 +445,7 @@ export default function Auth() {
                     placeholder="••••••••"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
                     className="bg-secondary border-border"
                   />
                   {errors.confirmPassword && (
