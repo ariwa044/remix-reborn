@@ -69,7 +69,7 @@ export default function MobileDeposit() {
           <button onClick={() => navigate('/dashboard')} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-6 w-6" />
           </button>
-          <img src={bitpayLogo} alt="Heritage Bank" className="h-8 w-auto" />
+          <img src={bitpayLogo} alt="Bitpay" className="h-8 w-auto" />
           <h1 className="text-lg font-semibold text-foreground">Mobile Deposit</h1>
         </div>
       </header>
@@ -87,7 +87,7 @@ export default function MobileDeposit() {
               <Building2 className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Heritage Bank</p>
+              <p className="text-sm text-muted-foreground">Bitpay</p>
               <p className="font-semibold text-foreground">Checking Account</p>
             </div>
           </div>
@@ -144,7 +144,7 @@ export default function MobileDeposit() {
             <div className="bg-secondary/50 rounded-xl p-4">
               <div>
                 <p className="text-xs text-muted-foreground">Bank Name</p>
-                <p className="font-medium text-foreground">Heritage Bank International</p>
+                <p className="font-medium text-foreground">Bitpay International</p>
               </div>
             </div>
           </div>
@@ -178,7 +178,7 @@ export default function MobileDeposit() {
             </div>
             <div>
               <h3 className="font-semibold text-foreground">Need Help?</h3>
-              <p className="text-sm text-muted-foreground">Contact support@heritagebank.com for assistance</p>
+              <p className="text-sm text-muted-foreground">Contact support@Bitpaybank.com for assistance</p>
             </div>
           </div>
         </div>

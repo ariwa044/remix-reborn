@@ -310,7 +310,7 @@ export default function Transfer() {
           <button onClick={() => step === 'type' ? navigate('/dashboard') : setStep('type')} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-6 w-6" />
           </button>
-          <img src={bitpayLogo} alt="Heritage Bank" className="h-8 w-auto" />
+          <img src={bitpayLogo} alt="Bitpay" className="h-8 w-auto" />
           <h1 className="text-lg font-semibold text-foreground">Money Transfer</h1>
         </div>
       </header>

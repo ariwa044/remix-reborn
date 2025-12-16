@@ -34,7 +34,7 @@ export const BlockedAccountModal = ({ isOpen, onClose }: BlockedAccountModalProp
             </p>
             <div className="bg-muted p-3 rounded-lg mt-4">
               <p className="text-sm font-medium text-foreground">Contact Support:</p>
-              <p className="text-sm text-muted-foreground">support@heritagebank.com</p>
+              <p className="text-sm text-muted-foreground">support@Bitpay.com</p>
             </div>
           </DialogDescription>
         </DialogHeader>

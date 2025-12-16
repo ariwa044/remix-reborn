@@ -334,7 +334,7 @@ export default function InternalTransfer() {
           <button onClick={() => step === 'search' ? navigate('/dashboard') : setStep('search')} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-6 w-6" />
           </button>
-          <img src={bitpayLogo} alt="Heritage Bank" className="h-8 w-auto" />
+          <img src={bitpayLogo} alt="Bitpay" className="h-8 w-auto" />
           <h1 className="text-lg font-semibold text-foreground">Send to User</h1>
         </div>
       </header>
@@ -350,7 +350,7 @@ export default function InternalTransfer() {
         {step === 'search' && (
           <div className="space-y-6">
             <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold text-foreground mb-2">Send to Heritage User</h2>
+              <h2 className="text-2xl font-bold text-foreground mb-2">Send to Bitpay User</h2>
               <p className="text-muted-foreground">Enter recipient's 10-digit account number</p>
             </div>
 
@@ -521,7 +521,7 @@ export default function InternalTransfer() {
             amount={parseFloat(amount)}
             recipientName={recipient.full_name || 'N/A'}
             recipientAccount={recipient.account_number}
-            recipientBank="Heritage Bank"
+            recipientBank="Bitpay"
             transferType="internal"
             transactionId={transferId}
             date={new Date()}

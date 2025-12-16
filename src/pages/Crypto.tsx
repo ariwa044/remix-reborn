@@ -654,7 +654,7 @@ export default function Crypto() {
             <button onClick={() => navigate('/dashboard')} className="text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-6 w-6" />
             </button>
-            <img src={bitpayLogo} alt="Heritage Bank" className="h-8 w-auto" />
+            <img src={bitpayLogo} alt="Bitpay" className="h-8 w-auto" />
             <h1 className="text-lg font-semibold text-foreground">Crypto Services</h1>
           </div>
           <button onClick={() => refetchPrices()} className="text-muted-foreground hover:text-foreground" disabled={pricesLoading}>
@@ -978,7 +978,7 @@ export default function Crypto() {
       {showInternalSendModal && <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-foreground">Send to Heritage User</h3>
+              <h3 className="text-xl font-bold text-foreground">Send to Bitpay User</h3>
               <button onClick={() => {
             setShowInternalSendModal(false);
             setInternalRecipient(null);

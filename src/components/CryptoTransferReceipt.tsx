@@ -45,7 +45,7 @@ export const CryptoTransferReceipt = ({
         <div className="relative z-10">
           {/* Header with Logo */}
           <div className="text-center mb-6">
-            <img src={bitpayLogo} alt="Heritage Bank" className="h-12 mx-auto mb-4" />
+            <img src={bitpayLogo} alt="Bitpay" className="h-12 mx-auto mb-4" />
             <div className="bg-green-500/10 rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
               <Check className="h-8 w-8 text-green-500" />
             </div>
@@ -127,7 +127,7 @@ export const CryptoTransferReceipt = ({
           {/* Footer */}
           <div className="mt-6 pt-4 border-t border-border text-center">
             <p className="text-xs text-muted-foreground">
-              Heritage Bank &copy; {new Date().getFullYear()} | Secure Crypto Banking
+              Bitpay &copy; {new Date().getFullYear()} | Secure Crypto Banking
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               This is an official transaction receipt
